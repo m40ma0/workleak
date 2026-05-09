@@ -1,97 +1,130 @@
+# WorkLeak
+
+**Find hidden workflow bottlenecks, estimate their business cost, and recommend practical fixes.**
+
+WorkLeak is an internal operations intelligence web app built for teams that want to move faster with less waste. It helps companies identify where time, money, and ownership are leaking across everyday workflows such as approvals, meetings, tickets, pull requests, and manual reporting.
+
+---
+
+## Elevator Pitch
+
+Every company leaks time through hidden bottlenecks. WorkLeak scans workflows, finds costly delays, and recommends fixes so teams can recover hours, cut waste, and move faster. Where is your team leaking work?
+
+---
+
 ## Inspiration
 
-WorkLeak was inspired by a simple but expensive question: 
+WorkLeak was inspired by a simple but expensive question:
 
 > Why do we keep doing this manually?
 
-In my past 2 work experiences, there were always hidden inefficiencies that can be found in workflows and processes. While they don't directly eat away at profits, they do cause delayed approvals, repeated  updates, duplicated reports, and meetings that create more work than they resolve.
+Every company has hidden inefficiencies that slowly drain time and money. They show up as delayed approvals, repeated status updates, tickets bouncing between owners, blocked pull requests, duplicate reports, and meetings that create more work than they resolve.
 
 The problem is not that teams are careless. The problem is that these leaks are scattered across different tools and workflows, so nobody sees the full cost. WorkLeak was built to make that waste visible.
 
-## What it does
+---
 
-WorkLeak is an internal operations intelligence tool that finds where work is leaking time and money.
+## What It Does
 
-Users can upload workflow data such as tickets, meetings, pull requests, approvals, or manual process logs. WorkLeak then analyzes the data and identifies high-friction patterns, including:
+WorkLeak analyzes workflow data and identifies high-friction patterns that cost the company time and money.
 
-- long wait times
-- repeated manual work
-- too many handoffs
-- stuck reviews
-- recurring blockers
-- duplicate reports
-- meetings with no clear outcomes
-- approval delays
+Users can upload workflow data such as:
 
-For each leak, WorkLeak estimates the business cost using:
+- Tickets
+- Meetings
+- Pull requests
+- Approval requests
+- Manual process logs
+- Operational exports from internal tools
+
+WorkLeak detects patterns such as:
+
+- Long wait times
+- Repeated manual work
+- Too many handoffs
+- Stuck pull request reviews
+- Recurring blockers
+- Duplicate reports
+- Meetings with no clear outcomes
+- Approval delays
+
+For each leak, WorkLeak estimates business cost using:
 
 $$
 \text{Monthly Cost} = \text{Hours Lost Per Month} \times \text{Average Hourly Cost}
 $$
 
-It then ranks the biggest problems and recommends practical fixes, such as automating an approval, reducing handoffs, creating a template, changing ownership, or replacing a recurring meeting with an async workflow.
+It then ranks the biggest problems and recommends practical fixes, such as:
+
+- Automating an approval
+- Reducing handoffs
+- Creating a reusable template
+- Assigning clearer ownership
+- Replacing a recurring meeting with an async workflow
+- Creating a Jira ticket or implementation plan
 
 The goal is simple: help teams know what to fix first.
 
-## How I built it
+---
 
-I built WorkLeak as a web application with a workflow analysis dashboard.
+## Why We Built It
 
-The prototype includes:
+Companies often know that certain processes are inefficient, but they usually do not know exactly where the waste is or how much it costs.
 
-- CSV upload for sample workflow data
-- sample datasets for tickets, meetings, approvals, and pull requests
-- a rules-based leak detection engine
-- an impact calculator that estimates hours and cost lost
-- a dashboard that ranks the highest-value opportunities
-- AI-generated summaries and recommendations
-- exportable action plans for teams to use after the demo
-
-The detection engine looks for measurable signals like wait time, repetition frequency, ownership changes, review delays, and unresolved blockers. Those signals are converted into estimated business impact so the results are easy to understand.
-
-## Challenges I ran into
-
-The hardest part was turning vague workplace frustration into something measurable.
-
-It is easy to say, “This process feels slow.” It is much harder to show that a process costs 40 hours per month or delays customer onboarding by two days. I had to decide which signals were realistic to detect in a hackathon prototype and which ones would still feel credible to a business audience.
-
-Another challenge was making the recommendations useful. I did not want WorkLeak to simply point at problems. The tool needed to suggest fixes that teams could actually adopt, such as clearer ownership, approval thresholds, automation rules, templates, or workflow changes.
-
-## Accomplishments that I'm proud of
-
-I am proud that WorkLeak turns messy operational data into a clear business story.
-
-Instead of showing another generic dashboard, WorkLeak answers questions leaders and teams actually care about:
+WorkLeak gives teams a clear answer to questions like:
 
 - Where are we losing time?
 - How much is it costing us?
-- Which problem should we fix first?
+- Which workflow should we fix first?
 - What action would save the most effort?
 - Can this realistically be improved next week?
 
-I am also proud of making the tool practical. The prototype does not require a perfect integration setup. A team can start with CSV uploads or sample exports and still get useful insights.
+Instead of relying on gut feeling, WorkLeak turns operational friction into measurable business impact.
 
-## What I learned
+---
 
-I learned that internal waste is often hiding in plain sight.
+## Key Features
 
-A delayed approval, a repeated meeting, or a stuck pull request may not seem expensive on its own. But when those patterns repeat every week across multiple teams, the cost becomes meaningful.
+### Workflow Data Upload
 
-I also learned that the best internal tools do not just add more information. They reduce uncertainty. WorkLeak helps teams move from “something feels inefficient” to “this is the leak, this is the cost, and this is the fix.”
+Upload sample workflow data through CSV files or structured exports.
 
-## What's next for WorkLeak
+Supported prototype data types include:
 
-Next, I would expand WorkLeak from a prototype into a production-ready internal tool.
+- Ticket data
+- Meeting data
+- Pull request data
+- Approval data
+- Manual workflow logs
 
-Future improvements include:
+### Leak Detection Engine
 
-- direct integrations with Slack, Jira, GitHub, Google Calendar, and email
-- department-level dashboards
-- trend tracking over time
-- automatic detection of new leaks
-- one-click Jira ticket creation
-- recommended automation workflows
-- privacy controls for sensitive company data
-- role-based views for executives, managers, and individual teams
+WorkLeak scans the uploaded data for signals of wasted time, including:
 
-Long term, WorkLeak could become a continuous improvement system for the company: always watching for operational drag, always ranking the highest-impact fixes, and helping teams recover time before it disappears.
+- Long cycle times
+- Repeated task titles or descriptions
+- Multiple owner changes
+- Pull requests waiting too long for review
+- Recurring meetings without outcomes
+- Approval requests stuck past SLA
+
+### Business Impact Calculator
+
+WorkLeak estimates lost time and cost by combining workflow frequency, delay, manual effort, and average hourly cost.
+
+Example:
+
+$$
+\text{Estimated Savings} = \text{Fixable Hours} \times \text{Average Hourly Cost}
+$$
+
+### Executive Dashboard
+
+The dashboard shows:
+
+- Total estimated monthly waste
+- Top workflow leaks
+- Affected teams
+- Estimated cost per leak
+- Projected savings
+- Recommended fixes
