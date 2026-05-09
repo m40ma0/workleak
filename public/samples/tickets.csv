@@ -1,0 +1,13 @@
+id,title,description,team,owner,status,createdAt,completedAt,waitHours,cycleHours,ownerChanges,blockerHours,repeatsPerMonth
+TCK-101,Customer onboarding approval,Waiting for finance approval before provisioning,Customer Ops,Avery,Done,2026-04-01,2026-04-06,42,112,4,18,7
+TCK-102,Customer onboarding approval,Manual checks before new customer workspace can go live,Customer Ops,Riley,Done,2026-04-03,2026-04-08,38,96,3,12,6
+TCK-103,Refund exception review,Support escalates refunds above threshold to finance,Support,Noah,Done,2026-04-05,2026-04-07,16,46,2,4,9
+TCK-104,Manual entitlement update,Operations edits plan access after sales exception,Revenue Ops,Morgan,Done,2026-04-08,2026-04-10,10,32,1,0,14
+TCK-105,Manual entitlement update,Repeated access update after custom contract terms,Revenue Ops,Jordan,Done,2026-04-11,2026-04-13,12,36,2,0,12
+TCK-106,Vendor security questionnaire,Procurement waits on security answers and owner swaps,Procurement,Casey,Open,2026-04-12,,54,130,5,30,4
+TCK-107,Billing address correction,Finance manually corrects invoice metadata,Finance,Taylor,Done,2026-04-14,2026-04-15,8,20,1,0,11
+TCK-108,Enterprise SSO setup,Identity setup blocked by missing admin approval,Customer Ops,Alex,Done,2026-04-15,2026-04-20,48,118,4,24,5
+TCK-109,Weekly KPI report refresh,Analyst copies team metrics into leadership deck,Data Ops,Jamie,Done,2026-04-16,2026-04-17,6,24,1,0,8
+TCK-110,Weekly KPI report refresh,Manual metrics consolidation for operations readout,Data Ops,Drew,Done,2026-04-23,2026-04-24,7,22,1,0,8
+TCK-111,Access request for contractor,Multiple approvals needed for temporary account,IT Ops,Robin,Done,2026-04-18,2026-04-22,36,88,3,16,6
+TCK-112,Duplicate customer status update,Support reposts CRM status to account tracker,Support,Parker,Done,2026-04-19,2026-04-19,4,10,0,0,18

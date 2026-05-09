@@ -1,0 +1,11 @@
+id,title,repository,author,reviewer,status,createdAt,mergedAt,reviewWaitHours,comments,reworkHours,blockerHours,repeatsPerMonth
+PR-301,Add onboarding approval guard,ops-platform,Avery,Sam,Merged,2026-04-02,2026-04-08,54,22,9,18,3
+PR-302,Add onboarding approval guard,ops-platform,Riley,Sam,Merged,2026-04-09,2026-04-14,44,18,7,10,2
+PR-303,Update entitlement mapping,revops-tools,Morgan,Lee,Merged,2026-04-04,2026-04-06,18,11,4,0,8
+PR-304,Update entitlement mapping,revops-tools,Jordan,Lee,Merged,2026-04-11,2026-04-13,20,13,5,0,7
+PR-305,Generate weekly KPI deck,data-automation,Jamie,Pat,Open,2026-04-15,,63,27,12,22,4
+PR-306,Fix refund exception workflow,support-tools,Noah,Quinn,Merged,2026-04-08,2026-04-10,16,9,3,4,5
+PR-307,Add vendor questionnaire parser,procurement-tools,Casey,Dee,Open,2026-04-12,,72,31,16,28,2
+PR-308,SSO setup checklist update,ops-platform,Alex,Sam,Merged,2026-04-17,2026-04-22,40,17,6,12,4
+PR-309,Contractor access expiry job,it-automation,Robin,Dee,Merged,2026-04-20,2026-04-23,28,14,5,8,3
+PR-310,CRM status repost script,support-tools,Parker,Quinn,Merged,2026-04-21,2026-04-22,10,6,2,0,12
