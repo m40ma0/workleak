@@ -5,7 +5,15 @@ MTG-203,Revenue exceptions standup,Revenue Ops,Morgan,twice weekly,6,30,8,true,2
 MTG-204,Finance approval checkpoint,Finance,Taylor,weekly,7,30,4,false,0,approval queue
 MTG-205,Approval queue review,Procurement,Casey,weekly,6,30,4,true,1,approval queue
 MTG-206,Engineering review retro,Engineering,Alex,weekly,10,30,4,true,3,engineering review
-MTG-207,Leadership KPI readout,Data Ops,Jamie,weekly,12,60,4,false,0,kpi reporting
-MTG-208,KPI deck prep sync,Data Ops,Drew,weekly,5,45,4,true,1,kpi reporting
+MTG-207,Leadership KPI readout,Data Ops,Jamie,weekly,12,45,4,false,0,kpi reporting
+MTG-208,KPI deck prep sync,Data Ops,Drew,weekly,5,30,4,true,1,kpi reporting
 MTG-209,Support escalation review,Support,Noah,weekly,7,45,4,true,2,support escalations
 MTG-210,Contractor access triage,IT Ops,Robin,weekly,5,30,4,false,0,access requests
+MTG-211,Product release decision,Product,Emerson,weekly,6,30,4,true,4,release decision
+MTG-212,Security architecture review,Security,Casey,biweekly,5,45,2,true,3,security architecture
+MTG-213,Customer advisory prep,Marketing,Harper,monthly,6,45,1,true,2,customer advisory
+MTG-214,Finance close checklist,Finance,Taylor,weekly,4,30,4,true,3,finance close
+MTG-215,Legal risk review,Legal,Quinn,biweekly,4,30,2,true,2,legal risk
+MTG-216,Sales forecast calibration,Revenue Ops,Morgan,weekly,5,30,4,true,2,sales forecast
+MTG-217,Support quality review,Support,Noah,weekly,4,30,4,true,2,support quality
+MTG-218,Data pipeline health check,Data Ops,Jamie,weekly,4,25,4,true,2,data health
