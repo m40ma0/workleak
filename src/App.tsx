@@ -5,25 +5,18 @@ import {
   Bot,
   CalendarClock,
   CheckCircle2,
-  Clock3,
   Copy,
   Database,
   Download,
   FileJson,
   FileSpreadsheet,
   FileText,
-  Gauge,
   GitPullRequest,
-  Handshake,
-  LineChart,
   ListChecks,
   Loader2,
-  Play,
   Target,
   Upload,
-  WalletCards,
   Workflow,
-  Zap,
 } from "lucide-react";
 import {
   Bar,
@@ -31,9 +24,6 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
-  Legend,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -68,7 +58,7 @@ import {
   downloadMarkdown,
   downloadText,
 } from "./lib/export";
-import { cn, formatCurrency, formatHours } from "./lib/utils";
+import { cn, formatCurrency } from "./lib/utils";
 import type {
   DataType,
   LeakCategory,
@@ -82,7 +72,7 @@ import type {
 
 type View = "dashboard" | "import" | "data" | "actions";
 
-const storageKey = "workleak-demo-state-v2";
+const storageKey = "workleak-demo-state-v3";
 
 const emptyData: WorkflowData = {
   tickets: [],
@@ -149,9 +139,9 @@ const fingerprintColor: Record<LeakFingerprint, string> = {
 
 const tabs: { id: View; label: string; icon: typeof BarChart3 }[] = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { id: "actions", label: "Action Plan", icon: Bot },
   { id: "import", label: "Import", icon: Upload },
   { id: "data", label: "Raw Data", icon: Database },
-  { id: "actions", label: "Action Plan", icon: Bot },
 ];
 
 const exportDefaults = {
@@ -230,7 +220,7 @@ function App() {
     }));
   }, [findings]);
 
-  const sourceChart = useMemo(
+  const sourceBreakdown = useMemo(
     () =>
       (Object.keys(dataTypeMeta) as DataType[]).map((sourceType) => {
         const cost = findings
@@ -238,28 +228,17 @@ function App() {
           .reduce((total, finding) => total + finding.adjustedMonthlyCost, 0);
 
         return {
-          name: dataTypeMeta[sourceType].label,
-          value: Math.round(cost),
-          fill:
-            sourceType === "tickets"
-              ? "#22577a"
-              : sourceType === "meetings"
-                ? "#38a3a5"
-                : "#f07167",
+          type: sourceType,
+          label: dataTypeMeta[sourceType].label,
+          rows: data[sourceType].length,
+          cost,
+          percent:
+            totals.adjustedMonthlyCost > 0
+              ? Math.round((cost / totals.adjustedMonthlyCost) * 100)
+              : 0,
         };
       }),
-    [findings],
-  );
-
-  const projectionData = useMemo(
-    () => [
-      { name: "Adjusted Waste", cost: Math.round(totals.adjustedMonthlyCost) },
-      {
-        name: "After First Fixes",
-        cost: Math.round(totals.adjustedMonthlyCost - totals.projectedSavings),
-      },
-    ],
-    [totals.adjustedMonthlyCost, totals.projectedSavings],
+    [data, findings, totals.adjustedMonthlyCost],
   );
 
   const fingerprintSummaries = useMemo(
@@ -352,56 +331,35 @@ function App() {
   }
 
   const hasData = totals.importedRows > 0;
-  const topFinding = findings[0];
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#f7fbfb_0%,#edf5f3_48%,#f8faf8_100%)]">
-      <div className="border-b bg-white/86 backdrop-blur">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#f5fbf7_0%,#edf6f1_46%,#f8faf8_100%)]">
+      <header className="border-b bg-white/90 backdrop-blur">
         <div className="container flex flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-col">
-            <div className="flex h-11 w-32 items-center justify-center rounded-lg">
-              <img src="/logo.png" alt="" />
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm">
+              <img
+                src="/logo.png"
+                alt="WorkLeak"
+                className="h-full w-full object-contain"
+              />
             </div>
             <div>
+              <h1 className="text-2xl font-semibold tracking-normal">
+                WorkLeak
+              </h1>
+              <p className="max-w-2xl text-sm text-muted-foreground">
+                Observability for how work moves through your company.
+              </p>
             </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[180px_170px_160px_auto] xl:items-end">
-            <div>
-              <Label htmlFor="hourly-cost">Average hourly cost</Label>
-              <div className="mt-1 flex items-center rounded-md border bg-white px-3 focus-within:ring-2 focus-within:ring-ring">
-                <span className="text-sm text-muted-foreground">$</span>
-                <Input
-                  id="hourly-cost"
-                  type="number"
-                  min={1}
-                  value={averageHourlyCost}
-                  onChange={(event) =>
-                    setAverageHourlyCost(Number(event.target.value) || 1)
-                  }
-                  className="border-0 px-2 shadow-none focus-visible:ring-0"
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="recovery-rate">Recovery assumption</Label>
-              <div className="mt-1 flex items-center rounded-md border bg-white px-3 focus-within:ring-2 focus-within:ring-ring">
-                <Input
-                  id="recovery-rate"
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={Math.round(recoveryRate * 100)}
-                  onChange={(event) =>
-                    setRecoveryRate(
-                      Math.min(1, Math.max(0.01, Number(event.target.value) / 100)),
-                    )
-                  }
-                  className="border-0 px-0 shadow-none focus-visible:ring-0"
-                />
-                <span className="text-sm text-muted-foreground">%</span>
-              </div>
-            </div>
+            <MoneyInput
+              value={averageHourlyCost}
+              onChange={setAverageHourlyCost}
+            />
+            <PercentInput value={recoveryRate} onChange={setRecoveryRate} />
             <Button
               variant="secondary"
               onClick={loadSampleData}
@@ -416,14 +374,14 @@ function App() {
             </Button>
             <Button onClick={handleExportMarkdown} disabled={!findings.length}>
               <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
-              Export MD
+              Export
             </Button>
           </div>
         </div>
-      </div>
+      </header>
 
       <div className="container py-5">
-        <div className="mb-5 flex gap-2 overflow-x-auto">
+        <nav className="mb-5 flex gap-2 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -435,7 +393,7 @@ function App() {
                   "inline-flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors",
                   view === tab.id
                     ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-white text-muted-foreground hover:bg-muted",
+                    : "border-border bg-white text-foreground hover:bg-muted",
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -443,62 +401,115 @@ function App() {
               </button>
             );
           })}
+        </nav>
+
+        <div key={view} className="page-transition">
+          {view === "dashboard" && (
+            <DashboardView
+              hasData={hasData}
+              totals={totals}
+              findings={findings}
+              categoryChart={categoryChart}
+              sourceBreakdown={sourceBreakdown}
+              fingerprintSummaries={fingerprintSummaries}
+              recoveryRate={recoveryRate}
+              isLoadingSamples={isLoadingSamples}
+              onLoadSamples={loadSampleData}
+              onOpenImport={() => setView("import")}
+              onOpenActions={() => setView("actions")}
+            />
+          )}
+
+          {view === "actions" && (
+            <ActionPlanView
+              findings={findings}
+              hasData={hasData}
+              isLoadingSamples={isLoadingSamples}
+              onLoadSamples={loadSampleData}
+              onExportMarkdown={handleExportMarkdown}
+              onExportJson={handleExportJson}
+              onExportCsv={handleExportCsv}
+            />
+          )}
+
+          {view === "import" && (
+            <ImportView
+              data={data}
+              importErrors={importErrors}
+              reportTitle={reportTitle}
+              companyName={companyName}
+              isLoadingSamples={isLoadingSamples}
+              onReportTitleChange={setReportTitle}
+              onCompanyNameChange={setCompanyName}
+              onFileUpload={handleFileUpload}
+              onLoadSamples={loadSampleData}
+              onTemplateDownload={handleTemplateDownload}
+            />
+          )}
+
+          {view === "data" && (
+            <RawDataView
+              data={data}
+              activeDataType={activeDataType}
+              onActiveDataTypeChange={setActiveDataType}
+            />
+          )}
         </div>
-
-        {view === "dashboard" && (
-          <DashboardView
-            hasData={hasData}
-            totals={totals}
-            findings={findings}
-            topFinding={topFinding}
-            categoryChart={categoryChart}
-            sourceChart={sourceChart}
-            projectionData={projectionData}
-            fingerprintSummaries={fingerprintSummaries}
-            recoveryRate={recoveryRate}
-            onLoadSamples={loadSampleData}
-            isLoadingSamples={isLoadingSamples}
-            onOpenImport={() => setView("import")}
-            onOpenActions={() => setView("actions")}
-          />
-        )}
-
-        {view === "import" && (
-          <ImportView
-            data={data}
-            importErrors={importErrors}
-            reportTitle={reportTitle}
-            companyName={companyName}
-            onReportTitleChange={setReportTitle}
-            onCompanyNameChange={setCompanyName}
-            onFileUpload={handleFileUpload}
-            onLoadSamples={loadSampleData}
-            isLoadingSamples={isLoadingSamples}
-            onTemplateDownload={handleTemplateDownload}
-          />
-        )}
-
-        {view === "data" && (
-          <RawDataView
-            data={data}
-            activeDataType={activeDataType}
-            onActiveDataTypeChange={setActiveDataType}
-          />
-        )}
-
-        {view === "actions" && (
-          <ActionPlanView
-            findings={findings}
-            hasData={hasData}
-            onLoadSamples={loadSampleData}
-            isLoadingSamples={isLoadingSamples}
-            onExportMarkdown={handleExportMarkdown}
-            onExportJson={handleExportJson}
-            onExportCsv={handleExportCsv}
-          />
-        )}
       </div>
     </main>
+  );
+}
+
+function MoneyInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor="hourly-cost">Hourly cost</Label>
+      <div className="mt-1 flex items-center rounded-md border bg-white px-3 focus-within:ring-2 focus-within:ring-ring">
+        <span className="text-sm text-muted-foreground">$</span>
+        <Input
+          id="hourly-cost"
+          type="number"
+          min={1}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value) || 1)}
+          className="border-0 px-2 shadow-none focus-visible:ring-0"
+        />
+      </div>
+    </div>
+  );
+}
+
+function PercentInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor="recovery-rate">Recovery</Label>
+      <div className="mt-1 flex items-center rounded-md border bg-white px-3 focus-within:ring-2 focus-within:ring-ring">
+        <Input
+          id="recovery-rate"
+          type="number"
+          min={1}
+          max={100}
+          value={Math.round(value * 100)}
+          onChange={(event) =>
+            onChange(Math.min(1, Math.max(0.01, Number(event.target.value) / 100)))
+          }
+          className="border-0 px-0 shadow-none focus-visible:ring-0"
+        />
+        <span className="text-sm text-muted-foreground">%</span>
+      </div>
+    </div>
   );
 }
 
@@ -506,47 +517,41 @@ function DashboardView({
   hasData,
   totals,
   findings,
-  topFinding,
   categoryChart,
-  sourceChart,
-  projectionData,
+  sourceBreakdown,
   fingerprintSummaries,
   recoveryRate,
-  onLoadSamples,
   isLoadingSamples,
+  onLoadSamples,
   onOpenImport,
   onOpenActions,
 }: {
   hasData: boolean;
   totals: ReturnType<typeof getTotals>;
   findings: LeakFinding[];
-  topFinding?: LeakFinding;
   categoryChart: { category: string; cost: number; fill: string }[];
-  sourceChart: { name: string; value: number; fill: string }[];
-  projectionData: { name: string; cost: number }[];
+  sourceBreakdown: {
+    type: DataType;
+    label: string;
+    rows: number;
+    cost: number;
+    percent: number;
+  }[];
   fingerprintSummaries: FingerprintSummary[];
   recoveryRate: number;
-  onLoadSamples: () => void;
   isLoadingSamples: boolean;
+  onLoadSamples: () => void;
   onOpenImport: () => void;
   onOpenActions: () => void;
 }) {
   if (!hasData) {
     return (
-      <div className="grid min-h-[64vh] place-items-center">
-        <div className="mx-auto max-w-3xl text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-lg bg-white shadow-soft">
-            <Workflow className="h-7 w-7 text-primary" aria-hidden="true" />
-          </div>
-          <h2 className="text-3xl font-semibold tracking-normal">
-            Find the operating-system change worth making first.
-          </h2>
-          <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
-            Upload workflow CSVs or open the seeded demo to see adjusted waste,
-            leak fingerprints, ROI-ranked fixes, automation recipes, and
-            Jira-ready action plans.
-          </p>
-          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+      <EmptyState
+        icon={<Workflow className="h-7 w-7 text-primary" aria-hidden="true" />}
+        title="A calmer way to see where work leaks time."
+        description="Load the demo data or upload CSVs to get adjusted waste, fix-first priorities, and a practical action plan."
+        action={
+          <div className="flex flex-col justify-center gap-3 sm:flex-row">
             <Button onClick={onLoadSamples} disabled={isLoadingSamples}>
               {isLoadingSamples ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -560,182 +565,187 @@ function DashboardView({
               Upload CSV
             </Button>
           </div>
-        </div>
-      </div>
+        }
+      />
     );
   }
 
+  const topFinding = findings[0];
+  const afterFixes = totals.adjustedMonthlyCost - totals.projectedSavings;
+
   return (
     <div className="space-y-5">
-      <ExecutiveImpactBanner
-        totals={totals}
-        topFinding={topFinding}
-        recoveryRate={recoveryRate}
-        onOpenActions={onOpenActions}
-      />
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <Card className="overflow-hidden border-primary/20 bg-white">
+          <CardContent className="p-5 lg:p-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <Badge variant="secondary">Executive Snapshot</Badge>
+                  <Badge variant="outline">
+                    {totals.importedRows} scanned
+                  </Badge>
+                  <Badge variant="outline">
+                    {totals.healthyWorkflowCount} healthy ignored
+                  </Badge>
+                </div>
+                <h2 className="max-w-3xl text-2xl font-semibold tracking-normal lg:text-3xl">
+                  Flagged {totals.findingsCount} high-value leaks. Best first
+                  fix: {topFinding?.fingerprint ?? "load data"}.
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  WorkLeak uses deterministic workflow rules and generated
+                  recommendation templates. Adjusted waste keeps overlapping
+                  signals from inflating the story.
+                </p>
+              </div>
+              <Button onClick={onOpenActions}>
+                <Target className="h-4 w-4" aria-hidden="true" />
+                Open Plan
+              </Button>
+            </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title="Adjusted Waste"
-          value={formatCurrency(totals.adjustedMonthlyCost)}
-          note="Deduplicated estimate"
-          icon={WalletCards}
-          tone="bg-[#22577a]"
-        />
-        <MetricCard
-          title="Projected Savings"
-          value={formatCurrency(totals.projectedSavings)}
-          note={`${Math.round(recoveryRate * 100)}% recovery assumption`}
-          icon={LineChart}
-          tone="bg-[#57cc99]"
-        />
-        <MetricCard
-          title="Adjusted Hours Lost"
-          value={formatHours(totals.adjustedHoursLost)}
-          note="Estimated per month"
-          icon={Clock3}
-          tone="bg-[#f07167]"
-        />
-        <MetricCard
-          title="WorkLeak Score"
-          value={`${totals.workLeakScore}/100`}
-          note={getLeakageLabel(totals.workLeakScore)}
-          icon={Gauge}
-          tone="bg-[#f2c14e]"
-        />
-      </div>
+            <div className="mt-6 grid gap-3 md:grid-cols-4">
+              <MetricTile
+                label="Adjusted waste"
+                value={formatCurrency(totals.adjustedMonthlyCost)}
+              />
+              <MetricTile
+                label="Recoverable"
+                value={formatCurrency(totals.projectedSavings)}
+              />
+              <MetricTile
+                label="After fixes"
+                value={formatCurrency(afterFixes)}
+              />
+              <MetricTile
+                label="WorkLeak score"
+                value={`${totals.workLeakScore}/100`}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
+        <Card className="bg-[#17202a] text-white">
+          <CardContent className="p-5">
+            <p className="text-sm text-white/65">Fix this first</p>
+            {topFinding ? (
+              <>
+                <h3 className="mt-2 text-xl font-semibold">
+                  {topFinding.title}
+                </h3>
+                <p className="mt-2 text-sm text-white/72">
+                  {topFinding.fingerprint} · {topFinding.confidence}% confidence
+                </p>
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <DarkStat
+                    label="Savings"
+                    value={formatCurrency(topFinding.projectedSavings)}
+                  />
+                  <DarkStat
+                    label="Payback"
+                    value={`${topFinding.paybackDays}d`}
+                  />
+                  <DarkStat
+                    label="Effort"
+                    value={`${topFinding.implementationDays}d`}
+                  />
+                  <DarkStat
+                    label="Score"
+                    value={`${topFinding.fixThisFirstScore}/100`}
+                  />
+                </div>
+                <p className="mt-5 text-sm leading-6 text-white/82">
+                  {topFinding.recommendation}
+                </p>
+              </>
+            ) : null}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>Fix This First</CardTitle>
             <CardDescription>
-              Ranked by projected savings, confidence, effort, and payback.
+              Practical ranking by savings, confidence, effort, and payback.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {findings.slice(0, 5).map((finding, index) => (
-                <FindingRow
-                  key={finding.id}
-                  finding={finding}
-                  rank={index + 1}
-                />
+                <CompactFinding key={finding.id} finding={finding} rank={index + 1} />
               ))}
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Before / After Simulation</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle>Source Health</CardTitle>
             <CardDescription>
-              Uses adjusted waste and the current recovery assumption.
+              Scanned rows, ignored normal work, and adjusted cost by source.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={projectionData}
-                  margin={{ top: 24, right: 8, left: 8, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => `$${Number(value) / 1000}k`}
-                  />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  <Bar dataKey="cost" radius={[6, 6, 0, 0]}>
-                    {projectionData.map((entry, index) => (
-                      <Cell
-                        key={entry.name}
-                        fill={index === 0 ? "#f07167" : "#57cc99"}
-                      />
-                    ))}
-                    <LabelList
-                      dataKey="cost"
-                      position="top"
-                      formatter={(value: number) => formatCurrency(value)}
-                      className="fill-foreground text-xs font-semibold"
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <MiniStat label="Scanned" value={`${totals.importedRows}`} />
+              <MiniStat label="Flagged" value={`${totals.flaggedRecordCount}`} />
+              <MiniStat label="Ignored" value={`${totals.healthyWorkflowCount}`} />
+            </div>
+            <div className="space-y-3">
+              {sourceBreakdown.map((source) => (
+                <SourceRow key={source.type} source={source} />
+              ))}
             </div>
           </CardContent>
         </Card>
-      </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Leak Fingerprints</CardTitle>
-          <CardDescription>
-            Named operational patterns make the diagnosis memorable and repeatable.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {fingerprintSummaries.slice(0, 8).map((summary) => (
-              <div
-                key={summary.fingerprint}
-                className="rounded-lg border bg-white p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{summary.fingerprint}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {summary.count} signal{summary.count === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <span
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: summary.color }}
-                  />
-                </div>
-                <p className="mt-4 text-2xl font-semibold tabular">
-                  {formatCurrency(summary.adjustedCost)}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Top fix: {summary.topRecommendation}
-                </p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.78fr)]">
+      <section className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
+            <CardTitle>Leak Fingerprints</CardTitle>
+            <CardDescription>Named patterns the team can remember.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fingerprintSummaries.slice(0, 6).map((summary) => (
+                <FingerprintCard key={summary.fingerprint} summary={summary} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
             <CardTitle>Adjusted Cost by Category</CardTitle>
             <CardDescription>
-              Which type of friction is costing the most after deduplication.
+              A quick read of where the money is leaking.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-80">
+            <div className="mx-auto h-72 w-full max-w-[680px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={categoryChart}
                   layout="vertical"
-                  margin={{ top: 8, right: 28, left: 128, bottom: 8 }}
+                  margin={{ top: 8, right: 64, left: 8, bottom: 8 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis
                     type="number"
-                    tickLine={false}
                     axisLine={false}
+                    tickLine={false}
                     tickFormatter={(value) => `$${Number(value) / 1000}k`}
                   />
                   <YAxis
                     type="category"
                     dataKey="category"
-                    width={126}
-                    tickLine={false}
+                    width={116}
                     axisLine={false}
+                    tickLine={false}
                     tick={{ fontSize: 12 }}
                   />
                   <Tooltip formatter={(value) => formatCurrency(Number(value))} />
@@ -755,169 +765,53 @@ function DashboardView({
             </div>
           </CardContent>
         </Card>
+      </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Waste by Source</CardTitle>
-            <CardDescription>
-              Tickets, meetings, and pull requests in one view.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={sourceChart}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={58}
-                    outerRadius={104}
-                    paddingAngle={4}
-                  >
-                    {sourceChart.map((entry) => (
-                      <Cell key={entry.name} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <MethodologyCard recoveryRate={recoveryRate} />
-        <IntegrationReadinessCard />
-      </div>
+      <Card>
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-3">
+          <MethodNote
+            title="Adjusted waste"
+            text="Deduplicates overlapping signals from the same workflow item."
+          />
+          <MethodNote
+            title="Fix-first score"
+            text="Projected savings and confidence, normalized by effort."
+          />
+          <MethodNote
+            title="Recovery assumption"
+            text={`Current model assumes ${Math.round(
+              recoveryRate * 100,
+            )}% recovery from the first improvement cycle.`}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function ExecutiveImpactBanner({
-  totals,
-  topFinding,
-  recoveryRate,
-  onOpenActions,
-}: {
-  totals: ReturnType<typeof getTotals>;
-  topFinding?: LeakFinding;
-  recoveryRate: number;
-  onOpenActions: () => void;
-}) {
+function MetricTile({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="overflow-hidden border-primary/30 bg-leak-ink text-white">
-      <CardContent className="p-5 lg:p-6">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">Executive Impact Snapshot</Badge>
-              <Badge variant="outline" className="border-white/30 text-white">
-                {totals.importedRows} records scanned
-              </Badge>
-            </div>
-            <h2 className="text-2xl font-semibold tracking-normal lg:text-3xl">
-              WorkLeak found {totals.findingsCount} workflow leaks across
-              tickets, meetings, and pull requests.
-            </h2>
-            <p className="mt-3 max-w-4xl text-sm leading-6 text-white/76">
-              Adjusted waste deduplicates overlapping leak signals from the
-              same workflow item. Projected savings assumes the first
-              improvement cycle recovers {Math.round(recoveryRate * 100)}% of
-              adjusted waste.
-            </p>
-          </div>
-          <Button variant="secondary" onClick={onOpenActions}>
-            <Play className="h-4 w-4" aria-hidden="true" />
-            Monday Plan
-          </Button>
-        </div>
-
-        <div className="mt-6 grid gap-3 md:grid-cols-4">
-          <BannerMetric label="Gross detected waste" value={formatCurrency(totals.grossMonthlyCost)} />
-          <BannerMetric label="Adjusted waste estimate" value={formatCurrency(totals.adjustedMonthlyCost)} />
-          <BannerMetric label="Recoverable savings" value={formatCurrency(totals.projectedSavings)} />
-          <BannerMetric
-            label="Fix this first"
-            value={topFinding ? topFinding.fingerprint : "No leak"}
-            compact
-          />
-        </div>
-
-        {topFinding && (
-          <div className="mt-5 rounded-lg border border-white/15 bg-white/8 p-4">
-            <p className="text-sm text-white/70">Best first fix</p>
-            <p className="mt-1 font-semibold">{topFinding.recommendation}</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function BannerMetric({
-  label,
-  value,
-  compact,
-}: {
-  label: string;
-  value: string;
-  compact?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-white/15 bg-white/8 p-4">
-      <p className="text-xs font-medium uppercase text-white/60">{label}</p>
-      <p
-        className={cn(
-          "mt-2 font-semibold tracking-normal tabular",
-          compact ? "text-lg" : "text-2xl",
-        )}
-      >
+    <div className="rounded-lg border bg-[#f9fbf8] p-4">
+      <p className="text-xs font-medium uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-semibold tracking-normal tabular">
         {value}
       </p>
     </div>
   );
 }
 
-function MetricCard({
-  title,
-  value,
-  note,
-  icon: Icon,
-  tone,
-}: {
-  title: string;
-  value: string;
-  note: string;
-  icon: typeof WalletCards;
-  tone: string;
-}) {
+function DarkStat({ label, value }: { label: string; value: string }) {
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between gap-4 p-5">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="mt-2 text-3xl font-semibold tracking-normal tabular">
-            {value}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">{note}</p>
-        </div>
-        <div
-          className={cn(
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-white",
-            tone,
-          )}
-        >
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </div>
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border border-white/15 bg-white/8 p-3">
+      <p className="text-xs text-white/60">{label}</p>
+      <p className="mt-1 font-semibold tabular">{value}</p>
+    </div>
   );
 }
 
-function FindingRow({
+function CompactFinding({
   finding,
   rank,
 }: {
@@ -925,41 +819,105 @@ function FindingRow({
   rank: number;
 }) {
   return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="grid gap-3 md:grid-cols-[48px_minmax(0,1fr)_auto] md:items-center">
-        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-muted text-base font-semibold">
+    <details className="group rounded-lg border bg-white p-3 transition-colors open:bg-[#fbfdfb]">
+      <summary className="grid cursor-pointer list-none gap-3 md:grid-cols-[38px_minmax(0,1fr)_auto] md:items-center">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-sm font-semibold">
           {rank}
-        </div>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold">{finding.title}</h3>
-            <Badge variant={severityVariant(finding.priority)}>
-              Priority {finding.priority}
-            </Badge>
+        </span>
+        <span className="min-w-0">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="truncate font-semibold">{finding.title}</span>
             <Badge variant="outline">{finding.fingerprint}</Badge>
-            <Badge variant="secondary">{finding.confidence}% confidence</Badge>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {finding.evidence}
-          </p>
-        </div>
-        <div className="text-left md:text-right">
-          <p className="text-xl font-semibold tabular">
+            <Badge variant="secondary">{finding.confidence}%</Badge>
+          </span>
+          <span className="mt-1 block text-sm text-muted-foreground">
+            {getSuggestedOwner(finding)} · {formatCurrency(finding.projectedSavings)}
+            /mo savings
+          </span>
+        </span>
+        <span className="text-left md:text-right">
+          <span className="block text-lg font-semibold tabular">
             {finding.fixThisFirstScore}/100
-          </p>
-          <p className="text-sm text-muted-foreground">Fix This First</p>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-4">
-        <MiniStat label="Adjusted cost" value={formatCurrency(finding.adjustedMonthlyCost)} />
-        <MiniStat label="Savings" value={formatCurrency(finding.projectedSavings)} />
-        <MiniStat label="Effort" value={`${finding.implementationEffort}, ${finding.implementationDays}d`} />
+          </span>
+          <span className="text-xs text-muted-foreground">fix-first</span>
+        </span>
+      </summary>
+      <div className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-4">
+        <MiniStat
+          label="Adjusted waste"
+          value={formatCurrency(finding.adjustedMonthlyCost)}
+        />
         <MiniStat label="Payback" value={`${finding.paybackDays}d`} />
+        <MiniStat
+          label="Effort"
+          value={`${finding.implementationEffort}, ${finding.implementationDays}d`}
+        />
+        <MiniStat label="Priority" value={finding.priority} />
       </div>
-      <details className="mt-3 rounded-md border bg-muted/30 p-3 text-sm">
-        <summary className="cursor-pointer font-medium">Why this was flagged</summary>
-        <EvidenceList finding={finding} />
-      </details>
+    </details>
+  );
+}
+
+function SourceRow({
+  source,
+}: {
+  source: {
+    label: string;
+    rows: number;
+    cost: number;
+    percent: number;
+  };
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium">{source.label}</span>
+        <span className="text-muted-foreground">
+          {source.rows} rows · {formatCurrency(source.cost)}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-primary"
+          style={{ width: `${source.percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FingerprintCard({ summary }: { summary: FingerprintSummary }) {
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">{summary.fingerprint}</p>
+          <p className="text-sm text-muted-foreground">
+            {summary.count} signal{summary.count === 1 ? "" : "s"}
+          </p>
+        </div>
+        <span
+          className="h-3 w-3 rounded-full"
+          style={{ backgroundColor: summary.color }}
+        />
+      </div>
+      <p className="mt-4 text-xl font-semibold tabular">
+        {formatCurrency(summary.adjustedCost)}
+      </p>
+    </div>
+  );
+}
+
+function MethodNote({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="flex gap-3">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+      </div>
+      <div>
+        <p className="font-semibold">{title}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+      </div>
     </div>
   );
 }
@@ -973,73 +931,292 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MethodologyCard({ recoveryRate }: { recoveryRate: number }) {
+function ActionPlanView({
+  findings,
+  hasData,
+  isLoadingSamples,
+  onLoadSamples,
+  onExportMarkdown,
+  onExportJson,
+  onExportCsv,
+}: {
+  findings: LeakFinding[];
+  hasData: boolean;
+  isLoadingSamples: boolean;
+  onLoadSamples: () => void;
+  onExportMarkdown: () => void;
+  onExportJson: () => void;
+  onExportCsv: () => void;
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyText(id: string, text: string) {
+    await copyToClipboard(text);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId(null), 1500);
+  }
+
+  if (!hasData) {
+    return (
+      <EmptyState
+        icon={<Bot className="h-7 w-7 text-primary" aria-hidden="true" />}
+        title="No action plan yet."
+        description="Load sample data to create a short, copyable plan for the highest-return fixes."
+        action={
+          <Button onClick={onLoadSamples} disabled={isLoadingSamples}>
+            {isLoadingSamples ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+            )}
+            Sample Data
+          </Button>
+        }
+      />
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>How WorkLeak Calculates Impact</CardTitle>
-        <CardDescription>
-          Transparent rules make the prototype easier to trust.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="rounded-lg border bg-white p-4">
-          <p className="font-semibold">Monthly Waste</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Leak hours x repeat frequency x average hourly cost
-          </p>
+    <div className="space-y-5">
+      <Card className="overflow-hidden border-[#f2c14e]/35 bg-[linear-gradient(135deg,#fff9ec_0%,#f6fbf6_54%,#eef8f8_100%)]">
+        <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <Badge variant="secondary">Monday Morning Plan</Badge>
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal">
+              Three fixes to start with.
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              A quiet timeline for owners, savings, effort, and next action.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <CopyButton
+              label="Copy Plan"
+              copied={copiedId === "monday-plan"}
+              onClick={() => copyText("monday-plan", formatMondayMorningPlan(findings))}
+            />
+            <Button variant="outline" size="sm" onClick={onExportMarkdown}>
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Markdown
+            </Button>
+            <Button variant="outline" size="sm" onClick={onExportJson}>
+              <FileJson className="h-4 w-4" aria-hidden="true" />
+              JSON
+            </Button>
+            <Button variant="outline" size="sm" onClick={onExportCsv}>
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+              CSV
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <Card className="border-[#d7e7df] bg-[#fbfdfb]">
+          <CardContent className="p-5">
+            <div className="relative space-y-4 before:absolute before:left-[19px] before:top-3 before:h-[calc(100%-24px)] before:w-px before:bg-[#b9d8cd]">
+              {findings.slice(0, 6).map((finding, index) => (
+                <TimelineItem
+                  key={finding.id}
+                  finding={finding}
+                  index={index}
+                  copiedId={copiedId}
+                  onCopy={copyText}
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-5">
+          <Card className="border-[#f2c14e]/35 bg-[#fff9ec]">
+            <CardHeader className="pb-3">
+              <CardTitle>Today’s Focus</CardTitle>
+              <CardDescription>Smallest practical starting point.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {findings[0] && (
+                <div className="space-y-3">
+                  <Badge variant="outline">{findings[0].fingerprint}</Badge>
+                  <p className="text-lg font-semibold">{findings[0].title}</p>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {findings[0].recommendation}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <MiniStat
+                      label="Savings"
+                      value={formatCurrency(findings[0].projectedSavings)}
+                    />
+                    <MiniStat
+                      label="Payback"
+                      value={`${findings[0].paybackDays}d`}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-[#d7e7df] bg-white">
+            <CardHeader className="pb-3">
+              <CardTitle>Plan Shape</CardTitle>
+              <CardDescription>How to read each action.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <MethodNote title="Owner" text="Who should take the first pass." />
+              <MethodNote title="Recipe" text="Trigger, action, and escalation." />
+              <MethodNote title="Evidence" text="Only the data needed to trust it." />
+            </CardContent>
+          </Card>
         </div>
-        <div className="rounded-lg border bg-white p-4">
-          <p className="font-semibold">Adjusted Waste</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Deduplicates overlapping signals from the same ticket, meeting, or
-            pull request so one workflow does not inflate the total.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-white p-4">
-          <p className="font-semibold">Fix This First Score</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Projected savings x confidence, normalized by implementation effort.
-            Current recovery assumption: {Math.round(recoveryRate * 100)}%.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-function IntegrationReadinessCard() {
-  const integrations = [
-    "Jira ticket ingest",
-    "GitHub PR ingest",
-    "Slack workflow signals",
-    "Google Calendar meetings",
-  ];
+function TimelineItem({
+  finding,
+  index,
+  copiedId,
+  onCopy,
+}: {
+  finding: LeakFinding;
+  index: number;
+  copiedId: string | null;
+  onCopy: (id: string, text: string) => void;
+}) {
+  const accent = getActionAccent(index, finding.fingerprint);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Integration-Ready Data Model</CardTitle>
-        <CardDescription>
-          CSV is the reliable demo path; these fields map to production integrations.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {integrations.map((integration) => (
-            <div key={integration} className="rounded-lg border bg-white p-4">
-              <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
-                <p className="font-semibold">{integration}</p>
+    <article className="relative pl-12">
+      <div
+        className="absolute left-0 top-1 flex h-10 w-10 items-center justify-center rounded-md border text-sm font-semibold shadow-sm transition-transform duration-200 hover:scale-105"
+        style={{
+          backgroundColor: accent.marker,
+          borderColor: accent.border,
+          color: accent.markerText,
+          boxShadow: `0 10px 26px ${accent.shadow}`,
+        }}
+      >
+        {index + 1}
+      </div>
+      <div
+        className="rounded-lg border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft"
+        style={{
+          background: accent.card,
+          borderColor: accent.border,
+        }}
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={severityVariant(finding.priority)}>
+                {finding.fixThisFirstScore}/100
+              </Badge>
+              <Badge variant="outline">{finding.fingerprint}</Badge>
+              <Badge variant="secondary">{finding.confidence}% confidence</Badge>
+            </div>
+            <h3 className="mt-3 text-lg font-semibold">{finding.title}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {getSuggestedOwner(finding)}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-left lg:w-[360px]">
+            <MiniStat
+              label="Savings"
+              value={formatCurrency(finding.projectedSavings)}
+            />
+            <MiniStat label="Effort" value={`${finding.implementationDays}d`} />
+            <MiniStat label="Payback" value={`${finding.paybackDays}d`} />
+          </div>
+        </div>
+
+        <div
+          className="mt-4 rounded-md border p-3 text-sm leading-6"
+          style={{
+            backgroundColor: accent.note,
+            borderColor: accent.border,
+          }}
+        >
+          {finding.recommendation}
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {finding.implementationSteps.slice(0, 3).map((step, stepIndex) => {
+            const stepAccent = getStepAccent(stepIndex);
+            return (
+              <div
+                key={step}
+                className="rounded-md border p-3 text-sm shadow-sm transition-transform duration-200 hover:-translate-y-0.5"
+                style={{
+                  backgroundColor: stepAccent.background,
+                  borderColor: stepAccent.border,
+                }}
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: stepAccent.dot }}
+                  />
+                  <span className="text-xs font-semibold uppercase text-muted-foreground">
+                    Step {stepIndex + 1}
+                  </span>
+                </div>
+                {step}
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Coming next after the hackathon prototype.
+            );
+          })}
+        </div>
+
+        <details
+          className="mt-4 rounded-md border p-3 text-sm"
+          style={{
+            backgroundColor: accent.details,
+            borderColor: accent.border,
+          }}
+        >
+          <summary className="cursor-pointer font-medium">Recipe and evidence</summary>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            <div
+              className="rounded-md border p-3"
+              style={{
+                backgroundColor: "#ffffff",
+                borderColor: accent.border,
+              }}
+            >
+              <p className="font-semibold">Automation recipe</p>
+              <p className="mt-2 text-muted-foreground">
+                {finding.automationRecipe.trigger}
+              </p>
+              <p className="mt-2 text-muted-foreground">
+                {finding.automationRecipe.action}
               </p>
             </div>
-          ))}
+            <EvidenceList finding={finding} compact />
+          </div>
+        </details>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <CopyButton
+            label="Copy Jira"
+            copied={copiedId === `${finding.id}-jira`}
+            onClick={() => onCopy(`${finding.id}-jira`, finding.jiraTicket)}
+          />
+          <CopyButton
+            label="Copy Recipe"
+            copied={copiedId === `${finding.id}-recipe`}
+            onClick={() =>
+              onCopy(`${finding.id}-recipe`, formatAutomationRecipe(finding))
+            }
+          />
+          <CopyButton
+            label="Copy Summary"
+            copied={copiedId === `${finding.id}-summary`}
+            onClick={() => onCopy(`${finding.id}-summary`, finding.executiveSummary)}
+          />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </article>
   );
 }
 
@@ -1048,99 +1225,58 @@ function ImportView({
   importErrors,
   reportTitle,
   companyName,
+  isLoadingSamples,
   onReportTitleChange,
   onCompanyNameChange,
   onFileUpload,
   onLoadSamples,
-  isLoadingSamples,
   onTemplateDownload,
 }: {
   data: WorkflowData;
   importErrors: string[];
   reportTitle: string;
   companyName: string;
+  isLoadingSamples: boolean;
   onReportTitleChange: (value: string) => void;
   onCompanyNameChange: (value: string) => void;
   onFileUpload: (type: DataType, file: File | null) => void;
   onLoadSamples: () => void;
-  isLoadingSamples: boolean;
   onTemplateDownload: (type: DataType) => void;
 }) {
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
-          <CardHeader>
-            <CardTitle>CSV Import</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle>Bring Your Workflow Data</CardTitle>
             <CardDescription>
-              Add tickets, meetings, and pull request exports.
+              CSV keeps the demo reliable and maps cleanly to future integrations.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
-              {(Object.keys(dataTypeMeta) as DataType[]).map((type) => {
-                const meta = dataTypeMeta[type];
-                const Icon = meta.icon;
-                const rows = data[type].length;
-
-                return (
-                  <div
-                    key={type}
-                    className="rounded-lg border bg-white p-4 shadow-sm"
-                  >
-                    <div
-                      className={cn(
-                        "mb-4 flex h-10 w-10 items-center justify-center rounded-md text-white",
-                        meta.accent,
-                      )}
-                    >
-                      <Icon className="h-5 w-5" aria-hidden="true" />
-                    </div>
-                    <div className="mb-4">
-                      <h3 className="font-semibold">{meta.label}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {rows} {meta.plural} imported
-                      </p>
-                    </div>
-                    <Label
-                      htmlFor={`${type}-upload`}
-                      className="mb-2 block text-xs uppercase text-muted-foreground"
-                    >
-                      CSV file
-                    </Label>
-                    <Input
-                      id={`${type}-upload`}
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={(event) =>
-                        onFileUpload(type, event.target.files?.[0] ?? null)
-                      }
-                    />
-                    <Button
-                      className="mt-3 w-full"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onTemplateDownload(type)}
-                    >
-                      <Download className="h-4 w-4" aria-hidden="true" />
-                      Template
-                    </Button>
-                  </div>
-                );
-              })}
+              {(Object.keys(dataTypeMeta) as DataType[]).map((type) => (
+                <UploadCard
+                  key={type}
+                  type={type}
+                  rows={data[type].length}
+                  onFileUpload={onFileUpload}
+                  onTemplateDownload={onTemplateDownload}
+                />
+              ))}
             </div>
           </CardContent>
         </Card>
 
         <div className="space-y-5">
           <Card>
-            <CardHeader>
-              <CardTitle>Seed Dataset</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle>Demo Data</CardTitle>
               <CardDescription>
-                Balanced demo data includes healthy rows, mild friction, and serious leaks.
+                Healthy rows, mild friction, and serious leaks.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
               <Button
                 className="w-full"
                 onClick={onLoadSamples}
@@ -1153,19 +1289,12 @@ function ImportView({
                 )}
                 Load Sample Data
               </Button>
-              <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                The sample set is intentionally not broken everywhere, so
-                WorkLeak can ignore healthy workflows and surface the highest-value leaks.
-              </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle>Report Details</CardTitle>
-              <CardDescription>
-                Used in Markdown, JSON, and CSV exports.
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -1189,11 +1318,11 @@ function ImportView({
             </CardContent>
           </Card>
         </div>
-      </div>
+      </section>
 
       {importErrors.length > 0 && (
         <Card className="border-destructive/40">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>Import Notices</CardTitle>
           </CardHeader>
           <CardContent>
@@ -1207,11 +1336,9 @@ function ImportView({
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Expected CSV Fields</CardTitle>
-          <CardDescription>
-            Column names are case-sensitive for this prototype.
-          </CardDescription>
+        <CardHeader className="pb-3">
+          <CardTitle>CSV Shape</CardTitle>
+          <CardDescription>Required columns for each upload type.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 lg:grid-cols-3">
@@ -1220,12 +1347,8 @@ function ImportView({
               fields={[
                 "id",
                 "title",
-                "description",
                 "team",
                 "owner",
-                "status",
-                "createdAt",
-                "completedAt",
                 "waitHours",
                 "cycleHours",
                 "ownerChanges",
@@ -1239,14 +1362,11 @@ function ImportView({
                 "id",
                 "title",
                 "team",
-                "organizer",
-                "cadence",
                 "attendees",
                 "durationMinutes",
                 "meetingsPerMonth",
                 "outcomeCaptured",
                 "actionItems",
-                "duplicateTopic",
               ]}
             />
             <FieldList
@@ -1255,21 +1375,66 @@ function ImportView({
                 "id",
                 "title",
                 "repository",
-                "author",
                 "reviewer",
-                "status",
-                "createdAt",
-                "mergedAt",
                 "reviewWaitHours",
                 "comments",
                 "reworkHours",
                 "blockerHours",
-                "repeatsPerMonth",
               ]}
             />
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function UploadCard({
+  type,
+  rows,
+  onFileUpload,
+  onTemplateDownload,
+}: {
+  type: DataType;
+  rows: number;
+  onFileUpload: (type: DataType, file: File | null) => void;
+  onTemplateDownload: (type: DataType) => void;
+}) {
+  const meta = dataTypeMeta[type];
+  const Icon = meta.icon;
+
+  return (
+    <div className="rounded-lg border bg-white p-4 shadow-sm">
+      <div className="mb-4 flex items-center gap-3">
+        <div
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-md text-white",
+            meta.accent,
+          )}
+        >
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div>
+          <h3 className="font-semibold">{meta.label}</h3>
+          <p className="text-sm text-muted-foreground">
+            {rows} {meta.plural}
+          </p>
+        </div>
+      </div>
+      <Input
+        type="file"
+        accept=".csv,text/csv"
+        onChange={(event) => onFileUpload(type, event.target.files?.[0] ?? null)}
+      />
+      <Button
+        className="mt-3 w-full"
+        variant="outline"
+        size="sm"
+        onClick={() => onTemplateDownload(type)}
+      >
+        <Download className="h-4 w-4" aria-hidden="true" />
+        Template
+      </Button>
     </div>
   );
 }
@@ -1301,47 +1466,45 @@ function RawDataView({
   const rows = data[activeDataType];
 
   return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>Raw Imported Data</CardTitle>
-              <CardDescription>
-                Review exactly what the detection engine is reading.
-              </CardDescription>
-            </div>
-            <div className="flex gap-2 overflow-x-auto">
-              {(Object.keys(dataTypeMeta) as DataType[]).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => onActiveDataTypeChange(type)}
-                  className={cn(
-                    "inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-sm font-medium transition-colors",
-                    activeDataType === type
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "bg-white hover:bg-muted",
-                  )}
-                >
-                  {dataTypeMeta[type].label}
-                </button>
-              ))}
-            </div>
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <CardTitle>Raw Imported Data</CardTitle>
+            <CardDescription>
+              A transparent look at the rows behind the recommendations.
+            </CardDescription>
           </div>
-        </CardHeader>
-        <CardContent>
-          {rows.length === 0 ? (
-            <EmptyState
-              title="No rows imported"
-              description="Load sample data or upload a CSV to populate this table."
-            />
-          ) : (
-            <DataTable rows={rows} />
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          <div className="flex gap-2 overflow-x-auto">
+            {(Object.keys(dataTypeMeta) as DataType[]).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => onActiveDataTypeChange(type)}
+                className={cn(
+                  "inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-sm font-medium transition-colors",
+                  activeDataType === type
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "bg-white text-foreground hover:bg-muted",
+                )}
+              >
+                {dataTypeMeta[type].label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No rows imported"
+            description="Load sample data or upload a CSV to populate this table."
+          />
+        ) : (
+          <DataTable rows={rows} />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1376,352 +1539,33 @@ function DataTable({
   );
 }
 
-function ActionPlanView({
-  findings,
-  hasData,
-  onLoadSamples,
-  isLoadingSamples,
-  onExportMarkdown,
-  onExportJson,
-  onExportCsv,
-}: {
-  findings: LeakFinding[];
-  hasData: boolean;
-  onLoadSamples: () => void;
-  isLoadingSamples: boolean;
-  onExportMarkdown: () => void;
-  onExportJson: () => void;
-  onExportCsv: () => void;
-}) {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  async function copyText(id: string, text: string) {
-    await copyToClipboard(text);
-    setCopiedId(id);
-    window.setTimeout(() => setCopiedId(null), 1600);
-  }
-
-  if (!hasData) {
-    return (
-      <EmptyState
-        title="No action plan yet"
-        description="Load the seeded dataset to generate summaries, recommendations, implementation steps, automation recipes, and Jira ticket text."
-        action={
-          <Button onClick={onLoadSamples} disabled={isLoadingSamples}>
-            {isLoadingSamples ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
-            )}
-            Sample Data
-          </Button>
-        }
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <CardTitle>Monday Morning Plan</CardTitle>
-              <CardDescription>
-                The top three fixes a team can start next week.
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={onExportMarkdown}>
-                <FileText className="h-4 w-4" aria-hidden="true" />
-                Markdown
-              </Button>
-              <Button variant="outline" size="sm" onClick={onExportJson}>
-                <FileJson className="h-4 w-4" aria-hidden="true" />
-                JSON
-              </Button>
-              <Button variant="outline" size="sm" onClick={onExportCsv}>
-                <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
-                CSV
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 lg:grid-cols-3">
-            {findings.slice(0, 3).map((finding, index) => (
-              <div key={finding.id} className="rounded-lg border bg-white p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <Badge variant="outline">#{index + 1}</Badge>
-                  <Badge variant={severityVariant(finding.priority)}>
-                    {finding.fixThisFirstScore}/100
-                  </Badge>
-                </div>
-                <p className="font-semibold">{finding.recommendation}</p>
-                <div className="mt-4 space-y-2 text-sm text-muted-foreground">
-                  <p>Owner: {finding.team}</p>
-                  <p>
-                    Effort: {finding.implementationEffort},{" "}
-                    {finding.implementationDays} day
-                    {finding.implementationDays === 1 ? "" : "s"}
-                  </p>
-                  <p>
-                    Expected savings: {formatCurrency(finding.projectedSavings)}
-                    /month
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {findings.slice(0, 8).map((finding, index) => (
-        <Card key={finding.id}>
-          <CardHeader>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">#{index + 1}</Badge>
-                  <Badge variant={severityVariant(finding.priority)}>
-                    Priority {finding.priority}
-                  </Badge>
-                  <Badge variant="secondary">{finding.fingerprint}</Badge>
-                  <Badge variant="outline">{finding.confidence}% confidence</Badge>
-                </div>
-                <CardTitle>{finding.title}</CardTitle>
-                <CardDescription>{finding.evidence}</CardDescription>
-              </div>
-              <div className="text-left lg:text-right">
-                <p className="text-2xl font-semibold tabular">
-                  {finding.fixThisFirstScore}/100
-                </p>
-                <p className="text-sm text-muted-foreground">Fix This First</p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,1.08fr)]">
-              <div className="space-y-4">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <MiniStat label="Adjusted waste" value={formatCurrency(finding.adjustedMonthlyCost)} />
-                  <MiniStat label="Projected savings" value={formatCurrency(finding.projectedSavings)} />
-                  <MiniStat label="Payback" value={`${finding.paybackDays} days`} />
-                  <MiniStat label="ROI score" value={`${finding.roiScore}/100`} />
-                </div>
-
-                <ActionBlock
-                  icon={Bot}
-                  title="Executive Summary"
-                  text={finding.executiveSummary}
-                  action={
-                    <CopyButton
-                      label="Copy"
-                      copied={copiedId === `${finding.id}-summary`}
-                      onClick={() =>
-                        copyText(`${finding.id}-summary`, finding.executiveSummary)
-                      }
-                    />
-                  }
-                />
-                <ActionBlock
-                  icon={CheckCircle2}
-                  title="Recommended Fix"
-                  text={finding.recommendation}
-                />
-
-                <PerLeakSimulation finding={finding} />
-
-                <details className="rounded-md border bg-white p-4 text-sm">
-                  <summary className="cursor-pointer font-semibold">
-                    Why this was flagged
-                  </summary>
-                  <EvidenceList finding={finding} />
-                </details>
-              </div>
-
-              <div className="space-y-4">
-                <div className="rounded-lg border bg-white p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Handshake className="h-4 w-4 text-primary" aria-hidden="true" />
-                      <h3 className="font-semibold">Implementation Steps</h3>
-                    </div>
-                    <CopyButton
-                      label="Copy"
-                      copied={copiedId === `${finding.id}-steps`}
-                      onClick={() =>
-                        copyText(
-                          `${finding.id}-steps`,
-                          finding.implementationSteps
-                            .map((step, stepIndex) => `${stepIndex + 1}. ${step}`)
-                            .join("\n"),
-                        )
-                      }
-                    />
-                  </div>
-                  <ol className="space-y-2">
-                    {finding.implementationSteps.map((step, stepIndex) => (
-                      <li
-                        key={step}
-                        className="flex gap-3 rounded-md border bg-muted/30 p-3 text-sm"
-                      >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-xs font-semibold">
-                          {stepIndex + 1}
-                        </span>
-                        <span>{step}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-
-                <AutomationRecipeBlock
-                  finding={finding}
-                  copied={copiedId === `${finding.id}-recipe`}
-                  onCopy={() =>
-                    copyText(`${finding.id}-recipe`, formatAutomationRecipe(finding))
-                  }
-                />
-
-                <div className="rounded-lg border bg-leak-ink p-4 text-white">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" aria-hidden="true" />
-                      <h3 className="font-semibold">Jira Ticket Text</h3>
-                    </div>
-                    <CopyButton
-                      label="Copy Jira"
-                      copied={copiedId === `${finding.id}-jira`}
-                      onClick={() => copyText(`${finding.id}-jira`, finding.jiraTicket)}
-                    />
-                  </div>
-                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md bg-black/20 p-4 text-sm leading-6 text-white/90">
-                    {finding.jiraTicket}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function ActionBlock({
-  icon: Icon,
-  title,
-  text,
-  action,
-}: {
-  icon: typeof Bot;
-  title: string;
-  text: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h3 className="font-semibold">{title}</h3>
-        </div>
-        {action}
-      </div>
-      <p className="rounded-md border bg-white p-3 text-sm leading-6 text-muted-foreground">
-        {text}
-      </p>
-    </div>
-  );
-}
-
-function PerLeakSimulation({ finding }: { finding: LeakFinding }) {
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Target className="h-4 w-4 text-primary" aria-hidden="true" />
-        <h3 className="font-semibold">Simulate Fix</h3>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MiniStat
-          label={finding.simulation.currentLabel}
-          value={finding.simulation.currentValue}
-        />
-        <MiniStat
-          label={finding.simulation.afterLabel}
-          value={finding.simulation.afterValue}
-        />
-        <MiniStat
-          label="Monthly savings"
-          value={formatCurrency(finding.simulation.savings)}
-        />
-      </div>
-      <div className="mt-4 h-3 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-[#57cc99]"
-          style={{
-            width: `${Math.min(
-              100,
-              (finding.simulation.savings /
-                Math.max(finding.simulation.currentMonthlyCost, 1)) *
-                100,
-            )}%`,
-          }}
-        />
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Current adjusted cost {formatCurrency(finding.simulation.currentMonthlyCost)} becomes{" "}
-        {formatCurrency(finding.simulation.afterMonthlyCost)} after the first
-        improvement cycle.
-      </p>
-    </div>
-  );
-}
-
-function AutomationRecipeBlock({
+function EvidenceList({
   finding,
-  copied,
-  onCopy,
+  compact = false,
 }: {
   finding: LeakFinding;
-  copied: boolean;
-  onCopy: () => void;
+  compact?: boolean;
 }) {
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h3 className="font-semibold">Automation Recipe</h3>
-        </div>
-        <CopyButton label="Copy" copied={copied} onClick={onCopy} />
-      </div>
-      <div className="space-y-3 text-sm">
-        <RecipeLine label="Trigger" value={finding.automationRecipe.trigger} />
-        <div>
-          <p className="font-medium">Conditions</p>
-          <ul className="mt-2 space-y-1 text-muted-foreground">
-            {finding.automationRecipe.conditions.map((condition) => (
-              <li key={condition}>- {condition}</li>
-            ))}
-          </ul>
-        </div>
-        <RecipeLine label="Action" value={finding.automationRecipe.action} />
-        <RecipeLine label="Escalation" value={finding.automationRecipe.escalation} />
-        <RecipeLine
-          label="Expected impact"
-          value={finding.automationRecipe.expectedImpact}
-        />
-      </div>
-    </div>
-  );
-}
+  const details = compact ? finding.evidenceDetails.slice(0, 4) : finding.evidenceDetails;
 
-function RecipeLine({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="font-medium">{label}</p>
-      <p className="mt-1 text-muted-foreground">{value}</p>
+    <div className="grid gap-2 sm:grid-cols-2">
+      {details.map((item) => (
+        <div
+          key={`${finding.id}-${item.label}`}
+          className="rounded-md border bg-white p-3"
+        >
+          <p className="text-xs font-medium uppercase text-muted-foreground">
+            {item.label}
+          </p>
+          <p className="mt-1 font-semibold">{item.value}</p>
+          {item.threshold && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Threshold: {item.threshold}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -1743,31 +1587,13 @@ function CopyButton({
   );
 }
 
-function EvidenceList({ finding }: { finding: LeakFinding }) {
-  return (
-    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-      {finding.evidenceDetails.map((item) => (
-        <div key={`${finding.id}-${item.label}`} className="rounded-md border bg-white p-3">
-          <p className="text-xs font-medium uppercase text-muted-foreground">
-            {item.label}
-          </p>
-          <p className="mt-1 font-semibold">{item.value}</p>
-          {item.threshold && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Threshold: {item.threshold}
-            </p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function EmptyState({
+  icon,
   title,
   description,
   action,
 }: {
+  icon?: ReactNode;
   title: string;
   description: string;
   action?: ReactNode;
@@ -1775,11 +1601,13 @@ function EmptyState({
   return (
     <div className="grid min-h-[340px] place-items-center rounded-lg border border-dashed bg-white/70 p-8 text-center">
       <div className="max-w-md">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-          <Database className="h-5 w-5 text-primary" aria-hidden="true" />
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-muted">
+          {icon ?? <Database className="h-6 w-6 text-primary" aria-hidden="true" />}
         </div>
-        <h2 className="text-xl font-semibold">{title}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        <h2 className="text-2xl font-semibold tracking-normal">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
         {action && <div className="mt-5">{action}</div>}
       </div>
     </div>
@@ -1790,7 +1618,6 @@ interface FingerprintSummary {
   fingerprint: LeakFingerprint;
   count: number;
   adjustedCost: number;
-  topRecommendation: string;
   color: string;
 }
 
@@ -1817,6 +1644,14 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
   );
   const importedRows =
     data.tickets.length + data.meetings.length + data.pullRequests.length;
+  const flaggedRecordCount = new Set(
+    findings.flatMap((finding) =>
+      finding.affectedRecords.map(
+        (recordId) => `${finding.sourceType}:${recordId}`,
+      ),
+    ),
+  ).size;
+  const healthyWorkflowCount = Math.max(0, importedRows - flaggedRecordCount);
   const criticalCount = findings.filter(
     (finding) => finding.priority === "Critical",
   ).length;
@@ -1839,35 +1674,34 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
     adjustedMonthlyCost,
     projectedSavings,
     importedRows,
+    flaggedRecordCount,
+    healthyWorkflowCount,
     findingsCount: findings.length,
     workLeakScore,
   };
 }
 
 function buildFingerprintSummaries(findings: LeakFinding[]): FingerprintSummary[] {
-  const grouped = findings.reduce<Record<string, LeakFinding[]>>((groups, finding) => {
-    groups[finding.fingerprint] = groups[finding.fingerprint]
-      ? [...groups[finding.fingerprint], finding]
-      : [finding];
-    return groups;
-  }, {});
+  const grouped = findings.reduce<Record<string, LeakFinding[]>>(
+    (groups, finding) => {
+      groups[finding.fingerprint] = groups[finding.fingerprint]
+        ? [...groups[finding.fingerprint], finding]
+        : [finding];
+      return groups;
+    },
+    {},
+  );
 
   return Object.entries(grouped)
-    .map(([fingerprint, group]) => {
-      const sorted = [...group].sort(
-        (a, b) => b.projectedSavings - a.projectedSavings,
-      );
-      return {
-        fingerprint: fingerprint as LeakFingerprint,
-        count: group.length,
-        adjustedCost: group.reduce(
-          (total, finding) => total + finding.adjustedMonthlyCost,
-          0,
-        ),
-        topRecommendation: sorted[0]?.recommendation ?? "Review workflow owner",
-        color: fingerprintColor[fingerprint as LeakFingerprint],
-      };
-    })
+    .map(([fingerprint, group]) => ({
+      fingerprint: fingerprint as LeakFingerprint,
+      count: group.length,
+      adjustedCost: group.reduce(
+        (total, finding) => total + finding.adjustedMonthlyCost,
+        0,
+      ),
+      color: fingerprintColor[fingerprint as LeakFingerprint],
+    }))
     .sort((a, b) => b.adjustedCost - a.adjustedCost);
 }
 
@@ -1886,6 +1720,107 @@ function formatAutomationRecipe(finding: LeakFinding) {
   ].join("\n");
 }
 
+function formatMondayMorningPlan(findings: LeakFinding[]) {
+  return findings
+    .slice(0, 3)
+    .map((finding, index) =>
+      [
+        `${index + 1}. ${finding.recommendation}`,
+        `Suggested owner: ${getSuggestedOwner(finding)}`,
+        `Effort: ${finding.implementationEffort} (${finding.implementationDays} day${
+          finding.implementationDays === 1 ? "" : "s"
+        })`,
+        `Expected savings: ${formatCurrency(finding.projectedSavings)}/month`,
+        `Fix This First Score: ${finding.fixThisFirstScore}/100`,
+      ].join("\n"),
+    )
+    .join("\n\n");
+}
+
+function getSuggestedOwner(finding: LeakFinding) {
+  if (finding.fingerprint === "Approval Black Hole") {
+    return `${finding.team} + Finance Ops`;
+  }
+  if (finding.sourceType === "pullRequests") {
+    return `Engineering owner for ${finding.team}`;
+  }
+  if (finding.sourceType === "meetings") {
+    return `${finding.team} meeting owner`;
+  }
+  if (finding.fingerprint === "Manual Report Tax") {
+    return `${finding.team} analytics owner`;
+  }
+  return `${finding.team} workflow owner`;
+}
+
+function getActionAccent(index: number, fingerprint: LeakFingerprint) {
+  const presets = [
+    {
+      marker: "#22577a",
+      markerText: "#ffffff",
+      border: "#9dc8d8",
+      card: "linear-gradient(135deg, #f4fbff 0%, #ffffff 56%, #eef8f8 100%)",
+      note: "#eef8f8",
+      details: "#f4fbff",
+      shadow: "rgba(34, 87, 122, 0.16)",
+    },
+    {
+      marker: "#38a3a5",
+      markerText: "#ffffff",
+      border: "#a7dedd",
+      card: "linear-gradient(135deg, #effafa 0%, #ffffff 58%, #f4fff9 100%)",
+      note: "#effafa",
+      details: "#f4fff9",
+      shadow: "rgba(56, 163, 165, 0.17)",
+    },
+    {
+      marker: "#f2c14e",
+      markerText: "#17202a",
+      border: "#f6d98b",
+      card: "linear-gradient(135deg, #fff9ec 0%, #ffffff 58%, #f7fbf0 100%)",
+      note: "#fff5dc",
+      details: "#fffaf0",
+      shadow: "rgba(242, 193, 78, 0.2)",
+    },
+    {
+      marker: "#f07167",
+      markerText: "#ffffff",
+      border: "#f5b0aa",
+      card: "linear-gradient(135deg, #fff3f1 0%, #ffffff 58%, #fff8ec 100%)",
+      note: "#fff0ee",
+      details: "#fff7f5",
+      shadow: "rgba(240, 113, 103, 0.17)",
+    },
+    {
+      marker: "#57cc99",
+      markerText: "#10251b",
+      border: "#afe7cd",
+      card: "linear-gradient(135deg, #effcf5 0%, #ffffff 58%, #f8fbef 100%)",
+      note: "#effcf5",
+      details: "#f7fff9",
+      shadow: "rgba(87, 204, 153, 0.18)",
+    },
+  ];
+
+  if (fingerprint === "PR Waiting Room" || fingerprint === "Rework Loop") {
+    return presets[3];
+  }
+  if (fingerprint === "Meeting Gravity Well" || fingerprint === "Manual Report Tax") {
+    return presets[2];
+  }
+  return presets[index % presets.length];
+}
+
+function getStepAccent(index: number) {
+  const accents = [
+    { background: "#eef8f8", border: "#b7dddc", dot: "#38a3a5" },
+    { background: "#fff7e7", border: "#f5d58a", dot: "#f2c14e" },
+    { background: "#effcf5", border: "#b9e9d1", dot: "#57cc99" },
+  ];
+
+  return accents[index % accents.length];
+}
+
 async function copyToClipboard(text: string) {
   if (window.navigator.clipboard) {
     await window.navigator.clipboard.writeText(text);
@@ -1901,12 +1836,6 @@ async function copyToClipboard(text: string) {
   textArea.select();
   document.execCommand("copy");
   document.body.removeChild(textArea);
-}
-
-function getLeakageLabel(score: number) {
-  if (score >= 72) return "Severe operational leakage";
-  if (score >= 44) return "Moderate operational leakage";
-  return "Low operational leakage";
 }
 
 function severityVariant(severity: LeakFinding["severity"]) {
