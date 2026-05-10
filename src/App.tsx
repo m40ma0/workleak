@@ -16,6 +16,7 @@ import {
   Loader2,
   Moon,
   Play,
+  Sparkles,
   Sun,
   Target,
   Upload,
@@ -75,6 +76,23 @@ import type {
 
 type View = "dashboard" | "actions" | "import" | "data";
 type Theme = "light" | "dark";
+type DataOrigin = "empty" | "sample" | "upload";
+
+interface GeneratedActionPlan {
+  executiveSummary: string;
+  recommendation: string;
+  implementationSteps: string[];
+  jiraTicket: string;
+  automationRecipe: {
+    trigger: string;
+    conditions: string[];
+    action: string;
+    escalation: string;
+    expectedImpact: string;
+  };
+}
+
+type GeminiStatus = "idle" | "loading" | "ready" | "error";
 
 const storageKey = "workleak-demo-state-v4";
 
@@ -189,6 +207,7 @@ function App() {
   const [reportTitle, setReportTitle] = useState(exportDefaults.reportTitle);
   const [companyName, setCompanyName] = useState(exportDefaults.companyName);
   const [data, setData] = useState<WorkflowData>(emptyData);
+  const [dataOrigin, setDataOrigin] = useState<DataOrigin>("empty");
   const [activeDataType, setActiveDataType] = useState<DataType>("tickets");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
@@ -206,6 +225,7 @@ function App() {
         reportTitle?: string;
         companyName?: string;
         theme?: Theme;
+        dataOrigin?: DataOrigin;
       };
 
       if (parsed.data) setData(parsed.data);
@@ -214,6 +234,7 @@ function App() {
       if (parsed.reportTitle) setReportTitle(parsed.reportTitle);
       if (parsed.companyName) setCompanyName(parsed.companyName);
       if (parsed.theme) setTheme(parsed.theme);
+      if (parsed.dataOrigin) setDataOrigin(parsed.dataOrigin);
     } catch {
       localStorage.removeItem(storageKey);
     }
@@ -230,9 +251,18 @@ function App() {
         reportTitle,
         companyName,
         theme,
+        dataOrigin,
       }),
     );
-  }, [data, averageHourlyCost, recoveryRate, reportTitle, companyName, theme]);
+  }, [
+    data,
+    averageHourlyCost,
+    recoveryRate,
+    reportTitle,
+    companyName,
+    theme,
+    dataOrigin,
+  ]);
 
   const findings = useMemo(
     () => detectLeaks(data, averageHourlyCost, recoveryRate),
@@ -318,6 +348,7 @@ function App() {
         meetings: meetings.rows as MeetingRecord[],
         pullRequests: pullRequests.rows as PullRequestRecord[],
       });
+      setDataOrigin("sample");
       setImportErrors([
         ...tickets.errors,
         ...meetings.errors,
@@ -342,6 +373,7 @@ function App() {
       ...current,
       [type]: result.rows,
     }));
+    setDataOrigin("upload");
   }
 
   function exportOptions() {
@@ -485,6 +517,8 @@ function App() {
           {view === "dashboard" && (
             <DashboardView
               hasData={hasData}
+              data={data}
+              dataOrigin={dataOrigin}
               totals={totals}
               findings={findings}
               categoryChart={categoryChart}
@@ -628,6 +662,8 @@ function ThemeToggle({
 
 function DashboardView({
   hasData,
+  data,
+  dataOrigin,
   totals,
   findings,
   categoryChart,
@@ -643,6 +679,8 @@ function DashboardView({
   onOpenActions,
 }: {
   hasData: boolean;
+  data: WorkflowData;
+  dataOrigin: DataOrigin;
   totals: ReturnType<typeof getTotals>;
   findings: LeakFinding[];
   categoryChart: { category: string; cost: number; fill: string }[];
@@ -694,7 +732,7 @@ function DashboardView({
 
   return (
     <div className="space-y-5">
-      <ObservabilityStrip />
+      <ObservabilityStrip dataOrigin={dataOrigin} />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="overflow-hidden border-primary/20 bg-card/90 shadow-soft backdrop-blur">
@@ -703,6 +741,7 @@ function DashboardView({
               <div>
                 <div className="mb-3 flex flex-wrap gap-2">
                   <Badge variant="secondary">Executive Snapshot</Badge>
+                  <Badge variant="outline">{getDataOriginLabel(dataOrigin)}</Badge>
                   <Badge variant="outline">{totals.importedRows} scanned</Badge>
                   <Badge variant="outline">
                     {totals.healthyWorkflowCount} ignored
@@ -728,7 +767,7 @@ function DashboardView({
               <MetricTile label="Recoverable" value={formatCurrency(totals.projectedSavings)} />
               <MetricTile label="FTE back" value={formatFte(totals.fteRecovered)} />
               <MetricTile label="After fixes" value={formatCurrency(afterFixes)} />
-              <MetricTile label="Score" value={`${totals.workLeakScore}/100`} />
+              <MetricTile label="Workflow health" value={`${totals.workflowHealthScore}/100`} />
             </div>
           </CardContent>
         </Card>
@@ -743,7 +782,7 @@ function DashboardView({
       />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <LeakReplayCard finding={topFinding} />
+        <LeakReplayCard finding={topFinding} data={data} />
         <FixSimulatorCard
           finding={topFinding}
           totals={totals}
@@ -866,7 +905,7 @@ function DashboardView({
       <Card className="bg-card/80">
         <CardContent className="grid gap-4 p-5 lg:grid-cols-3 xl:grid-cols-5">
           <MethodNote title="Adjusted waste" text="Deduplicates overlapping signals." />
-          <MethodNote title="Score" text="Lost hours, leak density, severity." />
+          <MethodNote title="Health" text="100 minus leak severity." />
           <MethodNote title="Fix-first" text="Savings and confidence against effort." />
           <MethodNote title="Confidence" text="Signal strength and completeness." />
           <MethodNote
@@ -879,7 +918,7 @@ function DashboardView({
   );
 }
 
-function ObservabilityStrip() {
+function ObservabilityStrip({ dataOrigin }: { dataOrigin: DataOrigin }) {
   return (
     <Card className="overflow-hidden border-primary/20 bg-card/86 shadow-sm">
       <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
@@ -889,15 +928,15 @@ function ObservabilityStrip() {
             <Badge variant="outline">Privacy-first prototype</Badge>
           </div>
           <h2 className="text-xl font-semibold tracking-normal">
-            Find the workflow path, the leak, and the first operating change.
+            WorkLeak is observability for company workflows.
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            CSV data is parsed in this browser. WorkLeak stores demo state locally
-            and exports only when you click.
+            It shows where work slows down, what it costs, and which operating
+            change should happen first.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <MiniStat label="Prototype data" value="Local only" />
+          <MiniStat label="Data source" value={getDataOriginLabel(dataOrigin)} />
           <MiniStat label="Connector model" value="Ready" />
         </div>
       </CardContent>
@@ -905,8 +944,14 @@ function ObservabilityStrip() {
   );
 }
 
-function LeakReplayCard({ finding }: { finding?: LeakFinding }) {
-  const replay = finding ? buildLeakReplay(finding) : [];
+function LeakReplayCard({
+  finding,
+  data,
+}: {
+  finding?: LeakFinding;
+  data: WorkflowData;
+}) {
+  const replay = finding ? buildLeakReplay(finding, data) : [];
 
   return (
     <Card className="bg-card/90">
@@ -924,7 +969,7 @@ function LeakReplayCard({ finding }: { finding?: LeakFinding }) {
           <div className="grid gap-3 lg:grid-cols-4">
             {replay.map((event, index) => (
               <div
-                key={event.title}
+                key={`${event.time}-${event.title}`}
                 className="relative rounded-lg border bg-muted/25 p-4 transition-transform duration-200 hover:-translate-y-0.5"
               >
                 <div className="mb-3 flex items-center gap-2">
@@ -1066,8 +1111,8 @@ function IntegrationPanel() {
   return (
     <Card className="bg-card/90">
       <CardHeader className="pb-3">
-        <CardTitle>Integration-Ready</CardTitle>
-        <CardDescription>Prototype connectors with a real data model behind them.</CardDescription>
+        <CardTitle>Connector Previews</CardTitle>
+        <CardDescription>How live Jira, GitHub, Slack, and Calendar signals would map in.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="rounded-lg border bg-secondary/65 p-3 text-sm text-secondary-foreground">
@@ -1095,10 +1140,10 @@ function IntegrationPanel() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  setMessage(`${connector.name} connector preview selected. Use CSV import for the live demo.`)
+                  setMessage(`${connector.name} preview selected. Use CSV import for the live demo.`)
                 }
               >
-                Connect
+                Preview
               </Button>
             </div>
           );
@@ -1124,7 +1169,7 @@ function FocusCard({ finding }: { finding?: LeakFinding }) {
               <DarkStat label="Savings" value={formatCurrency(finding.projectedSavings)} />
               <DarkStat label="Payback" value={`${finding.paybackDays}d`} />
               <DarkStat label="Effort" value={`${finding.implementationDays}d`} />
-              <DarkStat label="Score" value={`${finding.fixThisFirstScore}/100`} />
+              <DarkStat label="Fix-first" value={`${finding.fixThisFirstScore}/100`} />
             </div>
           </>
         ) : (
@@ -1263,10 +1308,10 @@ function BoardroomSummaryCard({
           )}
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <MiniStat label="Score" value={`${totals.workLeakScore}/100`} />
+          <MiniStat label="Workflow health" value={`${totals.workflowHealthScore}/100`} />
+          <MiniStat label="Leak severity" value={totals.leakSeverityLabel} />
           <MiniStat label="FTE back" value={formatFte(totals.fteRecovered)} />
           <MiniStat label="Fields" value={`${dataQuality.requiredFieldRate}%`} />
-          <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
         </div>
       </CardContent>
     </Card>
@@ -1285,7 +1330,13 @@ function DataQualityPanel({ dataQuality }: { dataQuality: DataQuality }) {
       <div className="mt-3 grid grid-cols-2 gap-2">
         <MiniStat label="Fields" value={`${dataQuality.requiredFieldRate}%`} />
         <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
+        <MiniStat label="Stale open rows" value={`${dataQuality.staleRows}`} />
+        <MiniStat label="Anomalies" value={`${dataQuality.issueCount}`} />
       </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        Checks include missing owners, impossible dates, suspicious values,
+        stale open work, and inconsistent team naming.
+      </p>
     </div>
   );
 }
@@ -1355,11 +1406,42 @@ function ActionPlanView({
   onExportCsv: () => void;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [generatedPlans, setGeneratedPlans] = useState<
+    Record<string, GeneratedActionPlan>
+  >({});
+  const [geminiStatus, setGeminiStatus] = useState<Record<string, GeminiStatus>>(
+    {},
+  );
+  const [geminiErrors, setGeminiErrors] = useState<Record<string, string>>({});
 
   async function copyText(id: string, text: string) {
     await copyToClipboard(text);
     setCopiedId(id);
     window.setTimeout(() => setCopiedId(null), 1500);
+  }
+
+  async function generateGeminiPlan(finding: LeakFinding) {
+    setGeminiStatus((current) => ({ ...current, [finding.id]: "loading" }));
+    setGeminiErrors((current) => {
+      const next = { ...current };
+      delete next[finding.id];
+      return next;
+    });
+
+    try {
+      const plan = await requestGeneratedActionPlan(finding);
+      setGeneratedPlans((current) => ({ ...current, [finding.id]: plan }));
+      setGeminiStatus((current) => ({ ...current, [finding.id]: "ready" }));
+    } catch (error) {
+      setGeminiStatus((current) => ({ ...current, [finding.id]: "error" }));
+      setGeminiErrors((current) => ({
+        ...current,
+        [finding.id]:
+          error instanceof Error
+            ? error.message
+            : "Gemini plan could not be generated.",
+      }));
+    }
   }
 
   if (!hasData) {
@@ -1427,7 +1509,11 @@ function ActionPlanView({
                   finding={finding}
                   index={index}
                   copiedId={copiedId}
+                  generatedPlan={generatedPlans[finding.id]}
+                  geminiStatus={geminiStatus[finding.id] ?? "idle"}
+                  geminiError={geminiErrors[finding.id]}
                   onCopy={copyText}
+                  onGenerateGeminiPlan={generateGeminiPlan}
                 />
               ))}
             </div>
@@ -1489,12 +1575,20 @@ function TimelineItem({
   finding,
   index,
   copiedId,
+  generatedPlan,
+  geminiStatus,
+  geminiError,
   onCopy,
+  onGenerateGeminiPlan,
 }: {
   finding: LeakFinding;
   index: number;
   copiedId: string | null;
+  generatedPlan?: GeneratedActionPlan;
+  geminiStatus: GeminiStatus;
+  geminiError?: string;
   onCopy: (id: string, text: string) => void;
+  onGenerateGeminiPlan: (finding: LeakFinding) => void;
 }) {
   const accent = getActionAccent(index, finding.fingerprint);
 
@@ -1546,6 +1640,43 @@ function TimelineItem({
 
         <div className={cn("mt-4 rounded-md border p-3 text-sm leading-6", accent.note)}>
           {finding.recommendation}
+        </div>
+
+        <div className="mt-4 rounded-md border bg-card/70 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold">Gemini action plan</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Optional server-generated plan. Templates remain available.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onGenerateGeminiPlan(finding)}
+              disabled={geminiStatus === "loading"}
+            >
+              {geminiStatus === "loading" ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+              )}
+              {geminiStatus === "ready" ? "Regenerate" : "Generate"}
+            </Button>
+          </div>
+          {geminiError && (
+            <p className="mt-3 text-sm leading-6 text-destructive">
+              {geminiError}
+            </p>
+          )}
+          {generatedPlan && (
+            <GeneratedPlanPanel
+              finding={finding}
+              plan={generatedPlan}
+              copiedId={copiedId}
+              onCopy={onCopy}
+            />
+          )}
         </div>
 
         <BeforeAfterMini finding={finding} />
@@ -1619,6 +1750,55 @@ function BeforeAfterMini({ finding }: { finding: LeakFinding }) {
       <MiniStat label={finding.simulation.currentLabel} value={finding.simulation.currentValue} />
       <MiniStat label={finding.simulation.afterLabel} value={finding.simulation.afterValue} />
       <MiniStat label="Savings" value={formatCurrency(finding.simulation.savings)} />
+    </div>
+  );
+}
+
+function GeneratedPlanPanel({
+  finding,
+  plan,
+  copiedId,
+  onCopy,
+}: {
+  finding: LeakFinding;
+  plan: GeneratedActionPlan;
+  copiedId: string | null;
+  onCopy: (id: string, text: string) => void;
+}) {
+  return (
+    <div className="mt-4 space-y-3 border-t pt-3">
+      <p className="text-sm leading-6 text-muted-foreground">
+        {plan.executiveSummary}
+      </p>
+      <div className="grid gap-3 lg:grid-cols-3">
+        {plan.implementationSteps.slice(0, 3).map((step, index) => (
+          <div key={step} className="rounded-md border bg-muted/35 p-3 text-sm">
+            <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+              AI step {index + 1}
+            </p>
+            {step}
+          </div>
+        ))}
+      </div>
+      <div className="rounded-md border bg-muted/35 p-3 text-sm">
+        <p className="font-semibold">Generated automation recipe</p>
+        <p className="mt-2 text-muted-foreground">{plan.automationRecipe.trigger}</p>
+        <p className="mt-2 text-muted-foreground">{plan.automationRecipe.action}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <CopyButton
+          label="Copy AI Summary"
+          copied={copiedId === `${finding.id}-ai-summary`}
+          onClick={() =>
+            onCopy(`${finding.id}-ai-summary`, plan.executiveSummary)
+          }
+        />
+        <CopyButton
+          label="Copy AI Jira"
+          copied={copiedId === `${finding.id}-ai-jira`}
+          onClick={() => onCopy(`${finding.id}-ai-jira`, plan.jiraTicket)}
+        />
+      </div>
     </div>
   );
 }
@@ -2026,6 +2206,52 @@ function ConfidenceDrivers({ finding }: { finding: LeakFinding }) {
   );
 }
 
+async function requestGeneratedActionPlan(finding: LeakFinding) {
+  const response = await fetch("/api/generate-action-plan", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      finding: {
+        title: finding.title,
+        category: finding.category,
+        fingerprint: finding.fingerprint,
+        team: finding.team,
+        sourceType: finding.sourceType,
+        evidence: finding.evidence,
+        evidenceDetails: finding.evidenceDetails,
+        affectedRecords: finding.affectedRecords,
+        adjustedMonthlyCost: finding.adjustedMonthlyCost,
+        projectedSavings: finding.projectedSavings,
+        confidence: finding.confidence,
+        implementationEffort: finding.implementationEffort,
+        paybackDays: finding.paybackDays,
+        recommendation: finding.recommendation,
+        implementationSteps: finding.implementationSteps,
+        automationRecipe: finding.automationRecipe,
+      },
+    }),
+  });
+
+  if (!response.headers.get("content-type")?.includes("application/json")) {
+    throw new Error(
+      "Gemini route is available on Vercel. Use the deployed app or run with vercel dev.",
+    );
+  }
+
+  const payload = (await response.json()) as {
+    plan?: GeneratedActionPlan;
+    error?: string;
+  };
+
+  if (!response.ok || !payload.plan) {
+    throw new Error(payload.error ?? "Gemini plan could not be generated.");
+  }
+
+  return payload.plan;
+}
+
 function CopyButton({
   label,
   copied,
@@ -2139,9 +2365,15 @@ interface TeamSummary {
 }
 
 interface DataQuality {
-  status: "Good" | "Fair";
+  status: "Good" | "Fair" | "Needs review";
   requiredFieldRate: number;
   meetingOutcomeGaps: number;
+  staleRows: number;
+  missingOwners: number;
+  suspiciousValues: number;
+  impossibleTimelines: number;
+  duplicateTeamNames: number;
+  issueCount: number;
 }
 
 function getTotals(data: WorkflowData, findings: LeakFinding[]) {
@@ -2181,7 +2413,7 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
   const criticalCount = findings.filter(
     (finding) => finding.priority === "Critical",
   ).length;
-  const workLeakScore = Math.min(
+  const leakSeverityScore = Math.min(
     100,
     Math.max(
       1,
@@ -2192,6 +2424,8 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
       ),
     ),
   );
+  const workflowHealthScore = Math.max(1, 100 - leakSeverityScore);
+  const leakSeverityLabel = getLeakSeverityLabel(leakSeverityScore);
 
   return {
     adjustedHoursLost,
@@ -2204,7 +2438,9 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
     flaggedRecordCount,
     healthyWorkflowCount,
     findingsCount: findings.length,
-    workLeakScore,
+    leakSeverityScore,
+    workflowHealthScore,
+    leakSeverityLabel,
   };
 }
 
@@ -2260,12 +2496,115 @@ function getDataQuality(data: WorkflowData): DataQuality {
   const meetingOutcomeGaps = data.meetings.filter(
     (meeting) => !meeting.outcomeCaptured || meeting.actionItems === 0,
   ).length;
+  const missingOwners =
+    data.tickets.filter((ticket) => !ticket.owner.trim()).length +
+    data.meetings.filter((meeting) => !meeting.organizer.trim()).length +
+    data.pullRequests.filter((pr) => !pr.reviewer.trim()).length;
+  const suspiciousValues =
+    data.tickets.filter(
+      (ticket) =>
+        ticket.waitHours < 0 ||
+        ticket.cycleHours < 0 ||
+        ticket.blockerHours < 0 ||
+        ticket.cycleHours > 720 ||
+        ticket.waitHours > 720,
+    ).length +
+    data.meetings.filter(
+      (meeting) =>
+        meeting.attendees <= 0 ||
+        meeting.durationMinutes <= 0 ||
+        meeting.durationMinutes > 240 ||
+        meeting.meetingsPerMonth > 40,
+    ).length +
+    data.pullRequests.filter(
+      (pr) =>
+        pr.reviewWaitHours < 0 ||
+        pr.reworkHours < 0 ||
+        pr.blockerHours < 0 ||
+        pr.reviewWaitHours > 720,
+    ).length;
+  const impossibleTimelines =
+    data.tickets.filter(
+      (ticket) =>
+        ticket.cycleHours < ticket.waitHours ||
+        isEndBeforeStart(ticket.createdAt, ticket.completedAt),
+    ).length +
+    data.pullRequests.filter((pr) =>
+      isEndBeforeStart(pr.createdAt, pr.mergedAt),
+    ).length;
+  const staleRows =
+    data.tickets.filter((ticket) =>
+      isStaleOpenRow(ticket.status, ticket.createdAt),
+    ).length +
+    data.pullRequests.filter((pr) => isStaleOpenRow(pr.status, pr.createdAt))
+      .length;
+  const duplicateTeamNames = countDuplicateTeamNameVariants([
+    ...data.tickets.map((ticket) => ticket.team),
+    ...data.meetings.map((meeting) => meeting.team),
+    ...data.pullRequests.map((pr) => pr.repository),
+  ]);
+  const issueCount =
+    meetingOutcomeGaps +
+    missingOwners +
+    suspiciousValues +
+    impossibleTimelines +
+    staleRows +
+    duplicateTeamNames;
+  const status =
+    requiredFieldRate < 80 || issueCount >= 10
+      ? "Needs review"
+      : requiredFieldRate >= 90 && issueCount <= 5
+        ? "Good"
+        : "Fair";
 
   return {
-    status: requiredFieldRate >= 90 ? "Good" : "Fair",
+    status,
     requiredFieldRate,
     meetingOutcomeGaps,
+    staleRows,
+    missingOwners,
+    suspiciousValues,
+    impossibleTimelines,
+    duplicateTeamNames,
+    issueCount,
   };
+}
+
+function isEndBeforeStart(start: string, end: string) {
+  if (!start || !end) return false;
+  const startTime = Date.parse(start);
+  const endTime = Date.parse(end);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return false;
+  return endTime < startTime;
+}
+
+function isStaleOpenRow(status: string, createdAt: string) {
+  const normalizedStatus = status.toLowerCase();
+  if (
+    normalizedStatus.includes("done") ||
+    normalizedStatus.includes("merged") ||
+    normalizedStatus.includes("closed")
+  ) {
+    return false;
+  }
+
+  const createdTime = Date.parse(createdAt);
+  if (!Number.isFinite(createdTime)) return false;
+  const ageDays = (Date.now() - createdTime) / (1000 * 60 * 60 * 24);
+  return ageDays > 21;
+}
+
+function countDuplicateTeamNameVariants(values: string[]) {
+  const variants = values.reduce<Record<string, Set<string>>>((groups, value) => {
+    const trimmed = value.trim();
+    if (!trimmed) return groups;
+    const key = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
+    groups[key] = groups[key] ?? new Set<string>();
+    groups[key].add(trimmed);
+    return groups;
+  }, {});
+
+  return Object.values(variants).filter((group) => group.size > 1).length;
 }
 
 function buildFingerprintSummaries(findings: LeakFinding[]): FingerprintSummary[] {
@@ -2344,14 +2683,114 @@ function buildTeamSummaries(
     .sort((a, b) => b.adjustedCost - a.adjustedCost);
 }
 
-function buildLeakReplay(finding: LeakFinding) {
+function buildLeakReplay(finding: LeakFinding, data: WorkflowData) {
+  const record = findPrimaryRecord(finding, data);
+  const partialCost = finding.adjustedMonthlyCost * 0.35;
+  const patternCost = finding.adjustedMonthlyCost * 0.75;
+
+  if (record && finding.sourceType === "tickets" && "cycleHours" in record) {
+    return [
+      {
+        time: formatTimelineDate(record.createdAt) || "Created",
+        title: "Ticket opened",
+        detail: `${record.id} entered ${record.team} with ${record.owner || "no owner"} assigned.`,
+        cost: 0,
+      },
+      {
+        time: addHoursLabel(record.createdAt, record.waitHours) || `${record.waitHours}h later`,
+        title: `${record.waitHours}h waiting`,
+        detail: `${record.ownerChanges} owner changes and ${record.blockerHours}h blocked before completion.`,
+        cost: partialCost,
+      },
+      {
+        time: formatTimelineDate(record.completedAt) || `${record.cycleHours}h cycle`,
+        title: finding.fingerprint,
+        detail: finding.evidence,
+        cost: patternCost,
+      },
+      {
+        time: "After fix",
+        title: finding.simulation.afterLabel,
+        detail: `${finding.recommendation}`,
+        cost: finding.simulation.afterMonthlyCost,
+      },
+    ];
+  }
+
+  if (
+    record &&
+    finding.sourceType === "pullRequests" &&
+    "reviewWaitHours" in record
+  ) {
+    return [
+      {
+        time: formatTimelineDate(record.createdAt) || "Opened",
+        title: "PR opened",
+        detail: `${record.id} opened in ${record.repository} and requested ${record.reviewer}.`,
+        cost: 0,
+      },
+      {
+        time:
+          addHoursLabel(record.createdAt, record.reviewWaitHours) ||
+          `${record.reviewWaitHours}h later`,
+        title: `${record.reviewWaitHours}h review wait`,
+        detail: `${record.comments} comments, ${record.reworkHours}h rework, ${record.blockerHours}h blocked.`,
+        cost: partialCost,
+      },
+      {
+        time: formatTimelineDate(record.mergedAt) || record.status,
+        title: finding.fingerprint,
+        detail: finding.evidence,
+        cost: patternCost,
+      },
+      {
+        time: "After fix",
+        title: finding.simulation.afterLabel,
+        detail: `${finding.recommendation}`,
+        cost: finding.simulation.afterMonthlyCost,
+      },
+    ];
+  }
+
+  if (record && finding.sourceType === "meetings" && "cadence" in record) {
+    const meetingHours =
+      (record.attendees * record.durationMinutes * record.meetingsPerMonth) / 60;
+
+    return [
+      {
+        time: record.cadence,
+        title: "Meeting recurs",
+        detail: `${record.title} pulls in ${record.attendees} attendees.`,
+        cost: 0,
+      },
+      {
+        time: `${record.meetingsPerMonth}/mo`,
+        title: `${roundForDisplay(meetingHours)} attendee-hours`,
+        detail: record.outcomeCaptured
+          ? `${record.actionItems} action item${record.actionItems === 1 ? "" : "s"} captured.`
+          : "No captured outcome.",
+        cost: partialCost,
+      },
+      {
+        time: "Pattern",
+        title: finding.fingerprint,
+        detail: finding.evidence,
+        cost: patternCost,
+      },
+      {
+        time: "After fix",
+        title: finding.simulation.afterLabel,
+        detail: `${finding.recommendation}`,
+        cost: finding.simulation.afterMonthlyCost,
+      },
+    ];
+  }
+
   const firstRecord = finding.affectedRecords[0] ?? "source row";
-  const halfCost = finding.adjustedMonthlyCost * 0.5;
-  const finalCost = finding.adjustedMonthlyCost;
 
   return [
     {
-      time: "Day 1",
+      time: "Start",
       title: "Workflow starts",
       detail: `${firstRecord} enters ${finding.team}.`,
       cost: 0,
@@ -2360,21 +2799,53 @@ function buildLeakReplay(finding: LeakFinding) {
       time: "Signal",
       title: finding.simulation.currentLabel,
       detail: `${finding.simulation.currentValue} exceeds the operating threshold.`,
-      cost: halfCost,
+      cost: partialCost,
     },
     {
       time: "Pattern",
       title: finding.fingerprint,
       detail: finding.evidence,
-      cost: finalCost,
+      cost: patternCost,
     },
     {
-      time: "Fix",
+      time: "After fix",
       title: finding.simulation.afterLabel,
       detail: `${finding.recommendation}`,
       cost: finding.simulation.afterMonthlyCost,
     },
   ];
+}
+
+function findPrimaryRecord(finding: LeakFinding, data: WorkflowData) {
+  const recordId = finding.affectedRecords[0];
+  if (!recordId) return undefined;
+
+  if (finding.sourceType === "tickets") {
+    return data.tickets.find((ticket) => ticket.id === recordId);
+  }
+  if (finding.sourceType === "meetings") {
+    return data.meetings.find((meeting) => meeting.id === recordId);
+  }
+  return data.pullRequests.find((pr) => pr.id === recordId);
+}
+
+function formatTimelineDate(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function addHoursLabel(start: string, hours: number) {
+  if (!start) return "";
+  const date = new Date(start);
+  if (!Number.isFinite(date.getTime())) return "";
+  date.setHours(date.getHours() + hours);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function roundForDisplay(value: number) {
+  return Number(value.toFixed(value >= 10 ? 0 : 1));
 }
 
 function formatAutomationRecipe(finding: LeakFinding) {
@@ -2437,6 +2908,19 @@ function formatBoardroomSummary(findings: LeakFinding[], dataQuality: DataQualit
 
 function formatFte(value: number) {
   return `${value.toFixed(value >= 1 ? 1 : 2)} FTE`;
+}
+
+function getLeakSeverityLabel(score: number) {
+  if (score >= 75) return "Critical";
+  if (score >= 55) return "High";
+  if (score >= 30) return "Moderate";
+  return "Low";
+}
+
+function getDataOriginLabel(dataOrigin: DataOrigin) {
+  if (dataOrigin === "sample") return "Sample data";
+  if (dataOrigin === "upload") return "Uploaded data";
+  return "No data";
 }
 
 function getSuggestedOwner(finding: LeakFinding) {
