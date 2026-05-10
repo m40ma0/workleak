@@ -2011,8 +2011,9 @@ function SettingsView({
               <p className="font-semibold">What is saved?</p>
               <p className="mt-1 text-muted-foreground">
                 Only after pressing Save: upload metadata, one analysis run,
-                findings, high-priority action plans, a report summary, and an
-                audit log. Raw CSV files are not uploaded.
+                findings, high-priority action plans, and a report summary.
+                Raw CSV files are not uploaded. Production audit logs should be
+                backend-written.
               </p>
             </div>
 
@@ -2705,10 +2706,17 @@ function ConfidenceDrivers({ finding }: { finding: LeakFinding }) {
 }
 
 async function requestGeneratedActionPlan(finding: LeakFinding) {
+  const token = await firebaseAuth?.currentUser?.getIdToken();
+
+  if (!token) {
+    throw new Error("Sign in before generating a Gemini action plan.");
+  }
+
   const response = await fetch("/api/generate-action-plan", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       finding: {

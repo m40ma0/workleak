@@ -25,6 +25,13 @@ interface GeminiResponse {
   }>;
 }
 
+interface FirebaseLookupResponse {
+  users?: Array<{
+    localId?: string;
+    email?: string;
+  }>;
+}
+
 interface ActionPlanRequestBody {
   finding?: unknown;
 }
@@ -94,6 +101,7 @@ const MAX_BODY_BYTES = 24_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 8;
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+const userRateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 
 export default async function handler(
   request: VercelRequest,
@@ -113,6 +121,19 @@ export default async function handler(
     return;
   }
 
+  const authResult = await verifyFirebaseUser(request);
+  if (authResult.ok === false) {
+    response.status(authResult.status).json({ error: authResult.error });
+    return;
+  }
+
+  if (isUserRateLimited(authResult.uid)) {
+    response.status(429).json({
+      error: "Too many action-plan requests for this account. Try again in a minute.",
+    });
+    return;
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -124,13 +145,13 @@ export default async function handler(
   }
 
   const parsedBody = parseRequestBody(request.body);
-  if (!parsedBody.ok) {
+  if (parsedBody.ok === false) {
     response.status(parsedBody.status).json({ error: parsedBody.error });
     return;
   }
 
   const validation = validateFindingPayload(parsedBody.body.finding);
-  if (!validation.ok) {
+  if (validation.ok === false) {
     response.status(400).json({ error: validation.error });
     return;
   }
@@ -483,6 +504,77 @@ function readAutomationRecipe(input: unknown): FindingPayload["automationRecipe"
   };
 }
 
+async function verifyFirebaseUser(
+  request: VercelRequest,
+): Promise<
+  | { ok: true; uid: string; email?: string }
+  | { ok: false; status: number; error: string }
+> {
+  const authHeader = readHeader(request, "authorization");
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+
+  if (!token) {
+    return {
+      ok: false,
+      status: 401,
+      error: "Sign in before generating a Gemini action plan.",
+    };
+  }
+
+  const firebaseApiKey =
+    process.env.FIREBASE_API_KEY ?? process.env.VITE_FIREBASE_API_KEY;
+
+  if (!firebaseApiKey) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Firebase API key is not configured for token validation.",
+    };
+  }
+
+  try {
+    const lookupResponse = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebaseApiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ idToken: token }),
+      },
+    );
+
+    if (!lookupResponse.ok) {
+      return {
+        ok: false,
+        status: 401,
+        error: "Your sign-in session could not be verified. Sign in again.",
+      };
+    }
+
+    const payload = (await lookupResponse.json()) as FirebaseLookupResponse;
+    const user = payload.users?.[0];
+
+    if (!user?.localId) {
+      return {
+        ok: false,
+        status: 401,
+        error: "Your sign-in session could not be verified. Sign in again.",
+      };
+    }
+
+    return { ok: true, uid: user.localId, email: user.email };
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      error: "Firebase token validation is temporarily unavailable.",
+    };
+  }
+}
+
 function isRateLimited(request: VercelRequest) {
   const ip = getClientIp(request);
   const now = Date.now();
@@ -500,10 +592,37 @@ function isRateLimited(request: VercelRequest) {
   return bucket.count > RATE_LIMIT_MAX_REQUESTS;
 }
 
+function isUserRateLimited(uid: string) {
+  const now = Date.now();
+  const bucket = userRateLimitBuckets.get(uid);
+
+  if (!bucket || bucket.resetAt <= now) {
+    userRateLimitBuckets.set(uid, {
+      count: 1,
+      resetAt: now + RATE_LIMIT_WINDOW_MS,
+    });
+    return false;
+  }
+
+  bucket.count += 1;
+  return bucket.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
 function getClientIp(request: VercelRequest) {
   const forwardedFor = request.headers?.["x-forwarded-for"];
   const raw = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
   return raw?.split(",")[0]?.trim() || request.socket?.remoteAddress || "local";
+}
+
+function readHeader(request: VercelRequest, headerName: string) {
+  const lowerHeaderName = headerName.toLowerCase();
+  const raw =
+    request.headers?.[lowerHeaderName] ??
+    Object.entries(request.headers ?? {}).find(
+      ([key]) => key.toLowerCase() === lowerHeaderName,
+    )?.[1];
+
+  return Array.isArray(raw) ? raw[0] : raw;
 }
 
 function getBodySize(body: unknown) {

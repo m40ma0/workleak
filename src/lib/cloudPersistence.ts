@@ -125,7 +125,6 @@ export async function saveAnalysisSnapshot(input: SaveAnalysisInput) {
   const analysisRunRef = doc(collection(db, "analysisRuns"));
   const uploadRef = doc(collection(db, "uploads"));
   const reportRef = doc(collection(db, "reports"));
-  const auditRef = doc(collection(db, "auditLogs"));
   const now = serverTimestamp();
 
   batch.set(uploadRef, {
@@ -174,6 +173,7 @@ export async function saveAnalysisSnapshot(input: SaveAnalysisInput) {
       ...cleanForFirestore(finding),
       workspaceId: input.workspaceId,
       analysisRunId: analysisRunRef.id,
+      createdByUid: input.user.uid,
       createdAt: now,
     });
 
@@ -209,21 +209,6 @@ export async function saveAnalysisSnapshot(input: SaveAnalysisInput) {
     projectedSavings: input.totals.projectedSavings,
     workflowHealthScore: input.totals.workflowHealthScore,
     leakSeverityLabel: input.totals.leakSeverityLabel,
-    createdAt: now,
-  });
-
-  batch.set(auditRef, {
-    workspaceId: input.workspaceId,
-    actorUid: input.user.uid,
-    actorEmail: input.user.email ?? "",
-    action: "analysis.completed",
-    targetType: "analysisRun",
-    targetId: analysisRunRef.id,
-    metadata: {
-      reportId: reportRef.id,
-      uploadId: uploadRef.id,
-      findings: input.findings.length,
-    },
     createdAt: now,
   });
 

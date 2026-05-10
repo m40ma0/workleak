@@ -10,6 +10,10 @@ service cloud.firestore {
       return request.auth.uid + "_default";
     }
 
+    function isDefaultWorkspace(workspaceId) {
+      return signedIn() && workspaceId == defaultWorkspaceId();
+    }
+
     function ownsIncomingWorkspaceDoc() {
       return signedIn()
         && request.resource.data.workspaceId == defaultWorkspaceId();
@@ -20,65 +24,300 @@ service cloud.firestore {
         && resource.data.workspaceId == defaultWorkspaceId();
     }
 
+    function isShortString(value, maxLength) {
+      return value is string && value.size() <= maxLength;
+    }
+
+    function isOptionalShortString(value, maxLength) {
+      return value == null || isShortString(value, maxLength);
+    }
+
+    function isBoundedNumber(value, minValue, maxValue) {
+      return value is number && value >= minValue && value <= maxValue;
+    }
+
+    function hasOnlyFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidUser(uid) {
+      return hasOnlyFields([
+          "uid",
+          "email",
+          "displayName",
+          "defaultWorkspaceId",
+          "updatedAt",
+          "lastLoginAt",
+          "createdAt"
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.defaultWorkspaceId == defaultWorkspaceId()
+        && isShortString(request.resource.data.email, 320)
+        && isShortString(request.resource.data.displayName, 120);
+    }
+
+    function isValidWorkspace(workspaceId) {
+      return hasOnlyFields([
+          "name",
+          "ownerUid",
+          "plan",
+          "settings",
+          "updatedAt",
+          "createdAt"
+        ])
+        && workspaceId == defaultWorkspaceId()
+        && request.resource.data.ownerUid == request.auth.uid
+        && isShortString(request.resource.data.name, 160)
+        && request.resource.data.plan in ["demo", "free"]
+        && request.resource.data.settings is map
+        && isBoundedNumber(request.resource.data.settings.averageHourlyCost, 1, 10000)
+        && isBoundedNumber(request.resource.data.settings.recoveryRate, 0.01, 1)
+        && request.resource.data.settings.deleteRawUploadsAfterAnalysis is bool;
+    }
+
+    function isValidMembership(membershipId) {
+      return hasOnlyFields([
+          "workspaceId",
+          "uid",
+          "email",
+          "role",
+          "status",
+          "updatedAt",
+          "createdAt"
+        ])
+        && membershipId == defaultWorkspaceId() + "_" + request.auth.uid
+        && request.resource.data.workspaceId == defaultWorkspaceId()
+        && request.resource.data.uid == request.auth.uid
+        && isShortString(request.resource.data.email, 320)
+        && request.resource.data.role == "owner"
+        && request.resource.data.status == "active";
+    }
+
+    function isValidUpload() {
+      return hasOnlyFields([
+          "workspaceId",
+          "uploadedByUid",
+          "fileName",
+          "storagePath",
+          "dataType",
+          "source",
+          "status",
+          "rowCount",
+          "errorCount",
+          "createdAt",
+          "processedAt"
+        ])
+        && ownsIncomingWorkspaceDoc()
+        && request.resource.data.uploadedByUid == request.auth.uid
+        && isShortString(request.resource.data.fileName, 180)
+        && request.resource.data.storagePath == null
+        && request.resource.data.dataType in ["mixed", "tickets", "meetings", "pullRequests"]
+        && request.resource.data.source in ["sample", "csv"]
+        && request.resource.data.status == "processed"
+        && isBoundedNumber(request.resource.data.rowCount, 0, 10000)
+        && isBoundedNumber(request.resource.data.errorCount, 0, 10000);
+    }
+
+    function isValidAnalysisRun() {
+      return hasOnlyFields([
+          "workspaceId",
+          "createdByUid",
+          "uploadIds",
+          "status",
+          "importedRows",
+          "flaggedRecordCount",
+          "healthyWorkflowCount",
+          "adjustedMonthlyCost",
+          "projectedSavings",
+          "fteRecovered",
+          "workflowHealthScore",
+          "leakSeverityLabel",
+          "dataQuality",
+          "averageHourlyCost",
+          "recoveryRate",
+          "createdAt",
+          "completedAt"
+        ])
+        && ownsIncomingWorkspaceDoc()
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.uploadIds is list
+        && request.resource.data.uploadIds.size() <= 5
+        && request.resource.data.status == "completed"
+        && isBoundedNumber(request.resource.data.importedRows, 0, 10000)
+        && isBoundedNumber(request.resource.data.flaggedRecordCount, 0, 10000)
+        && isBoundedNumber(request.resource.data.healthyWorkflowCount, 0, 10000)
+        && isBoundedNumber(request.resource.data.adjustedMonthlyCost, 0, 100000000)
+        && isBoundedNumber(request.resource.data.projectedSavings, 0, 100000000)
+        && isBoundedNumber(request.resource.data.fteRecovered, 0, 10000)
+        && isBoundedNumber(request.resource.data.workflowHealthScore, 0, 100)
+        && isShortString(request.resource.data.leakSeverityLabel, 40)
+        && request.resource.data.dataQuality is map
+        && isBoundedNumber(request.resource.data.averageHourlyCost, 1, 10000)
+        && isBoundedNumber(request.resource.data.recoveryRate, 0.01, 1);
+    }
+
+    function isValidFinding() {
+      return hasRequiredFields([
+          "workspaceId",
+          "analysisRunId",
+          "createdByUid",
+          "id",
+          "category",
+          "fingerprint",
+          "sourceType",
+          "affectedRecords",
+          "title",
+          "team",
+          "evidence",
+          "adjustedMonthlyCost",
+          "projectedSavings",
+          "confidence",
+          "fixThisFirstScore",
+          "createdAt"
+        ])
+        && request.resource.data.keys().size() <= 45
+        && ownsIncomingWorkspaceDoc()
+        && request.resource.data.createdByUid == request.auth.uid
+        && isShortString(request.resource.data.analysisRunId, 120)
+        && isShortString(request.resource.data.id, 120)
+        && request.resource.data.category in [
+          "Long wait time",
+          "Too many handoffs",
+          "Repeated manual work",
+          "Blocked work",
+          "Duplicate meetings/reports"
+        ]
+        && request.resource.data.sourceType in ["tickets", "meetings", "pullRequests"]
+        && request.resource.data.affectedRecords is list
+        && request.resource.data.affectedRecords.size() <= 50
+        && isShortString(request.resource.data.title, 220)
+        && isShortString(request.resource.data.team, 160)
+        && isShortString(request.resource.data.evidence, 1200)
+        && isBoundedNumber(request.resource.data.adjustedMonthlyCost, 0, 100000000)
+        && isBoundedNumber(request.resource.data.projectedSavings, 0, 100000000)
+        && isBoundedNumber(request.resource.data.confidence, 0, 100)
+        && isBoundedNumber(request.resource.data.fixThisFirstScore, 0, 100);
+    }
+
+    function isValidActionPlan() {
+      return hasOnlyFields([
+          "workspaceId",
+          "analysisRunId",
+          "findingId",
+          "source",
+          "executiveSummary",
+          "recommendation",
+          "implementationSteps",
+          "jiraTicket",
+          "automationRecipe",
+          "createdByUid",
+          "createdAt",
+          "updatedAt"
+        ])
+        && ownsIncomingWorkspaceDoc()
+        && request.resource.data.createdByUid == request.auth.uid
+        && isShortString(request.resource.data.analysisRunId, 120)
+        && isShortString(request.resource.data.findingId, 120)
+        && request.resource.data.source in ["template", "gemini"]
+        && isShortString(request.resource.data.executiveSummary, 1200)
+        && isShortString(request.resource.data.recommendation, 1000)
+        && request.resource.data.implementationSteps is list
+        && request.resource.data.implementationSteps.size() <= 8
+        && isShortString(request.resource.data.jiraTicket, 4000)
+        && request.resource.data.automationRecipe is map;
+    }
+
+    function isValidReport() {
+      return hasOnlyFields([
+          "workspaceId",
+          "analysisRunId",
+          "createdByUid",
+          "title",
+          "companyName",
+          "format",
+          "storagePath",
+          "contentPreview",
+          "adjustedMonthlyCost",
+          "projectedSavings",
+          "workflowHealthScore",
+          "leakSeverityLabel",
+          "createdAt"
+        ])
+        && ownsIncomingWorkspaceDoc()
+        && request.resource.data.createdByUid == request.auth.uid
+        && isShortString(request.resource.data.analysisRunId, 120)
+        && isShortString(request.resource.data.title, 180)
+        && isShortString(request.resource.data.companyName, 180)
+        && request.resource.data.format == "saved-report"
+        && request.resource.data.storagePath == null
+        && isShortString(request.resource.data.contentPreview, 600)
+        && isBoundedNumber(request.resource.data.adjustedMonthlyCost, 0, 100000000)
+        && isBoundedNumber(request.resource.data.projectedSavings, 0, 100000000)
+        && isBoundedNumber(request.resource.data.workflowHealthScore, 0, 100)
+        && isShortString(request.resource.data.leakSeverityLabel, 40);
+    }
+
     match /users/{uid} {
-      allow read, update: if signedIn() && request.auth.uid == uid;
-      allow create: if signedIn()
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.uid == uid;
+        && isValidUser(uid);
       allow delete: if false;
     }
 
     match /workspaces/{workspaceId} {
-      allow read, create, update: if signedIn()
-        && workspaceId == defaultWorkspaceId();
+      allow read: if isDefaultWorkspace(workspaceId);
+      allow create, update: if signedIn()
+        && isValidWorkspace(workspaceId);
       allow delete: if false;
     }
 
     match /memberships/{membershipId} {
-      allow read, update: if signedIn()
+      allow read: if signedIn()
         && resource.data.uid == request.auth.uid
         && resource.data.workspaceId == defaultWorkspaceId();
-      allow create: if signedIn()
-        && membershipId == defaultWorkspaceId() + "_" + request.auth.uid
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.workspaceId == defaultWorkspaceId();
+      allow create, update: if signedIn()
+        && isValidMembership(membershipId);
       allow delete: if false;
     }
 
     match /uploads/{docId} {
       allow read: if ownsExistingWorkspaceDoc();
-      allow create: if ownsIncomingWorkspaceDoc();
+      allow create: if isValidUpload();
       allow update, delete: if false;
     }
 
     match /analysisRuns/{docId} {
       allow read: if ownsExistingWorkspaceDoc();
-      allow create: if ownsIncomingWorkspaceDoc();
+      allow create: if isValidAnalysisRun();
       allow update, delete: if false;
     }
 
     match /findings/{docId} {
       allow read: if ownsExistingWorkspaceDoc();
-      allow create: if ownsIncomingWorkspaceDoc();
+      allow create: if isValidFinding();
       allow update, delete: if false;
     }
 
     match /actionPlans/{docId} {
       allow read: if ownsExistingWorkspaceDoc();
-      allow create: if ownsIncomingWorkspaceDoc();
+      allow create: if isValidActionPlan();
       allow update, delete: if false;
     }
 
     match /reports/{docId} {
       allow read: if ownsExistingWorkspaceDoc();
-      allow create: if ownsIncomingWorkspaceDoc();
+      allow create: if isValidReport();
       allow update, delete: if false;
     }
 
+    // Production audit logs should be written by trusted backend code only.
     match /auditLogs/{docId} {
-      allow read: if ownsExistingWorkspaceDoc();
-      allow create: if ownsIncomingWorkspaceDoc();
-      allow update, delete: if false;
+      allow read, write: if false;
     }
   }
 }
