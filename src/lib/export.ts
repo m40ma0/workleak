@@ -29,8 +29,10 @@ export function buildMarkdownActionPlan(
     `Gross detected waste: ${formatCurrency(totals.grossCost)}`,
     `Adjusted estimated waste: ${formatCurrency(totals.adjustedCost)}`,
     `Projected recoverable savings: ${formatCurrency(totals.projectedSavings)}`,
+    `Estimated FTE recovered: ${totals.fteRecovered.toFixed(2)} FTE`,
     "",
     "> Adjusted waste deduplicates overlapping leak signals from the same workflow item.",
+    "> Prototype privacy note: imported CSVs are parsed in the browser and are not uploaded by WorkLeak.",
     "",
     "## Monday Morning Plan",
     "",
@@ -223,6 +225,14 @@ export function downloadText(filename: string, content: string, type: string) {
 }
 
 function getExportTotals(findings: LeakFinding[]) {
+  const recoverableHours = findings.reduce((total, leak) => {
+    const recoveryShare =
+      leak.adjustedMonthlyCost > 0
+        ? leak.projectedSavings / leak.adjustedMonthlyCost
+        : 0;
+    return total + leak.adjustedHoursLostPerMonth * recoveryShare;
+  }, 0);
+
   return {
     grossCost: findings.reduce((total, leak) => total + leak.monthlyCost, 0),
     adjustedCost: findings.reduce(
@@ -233,6 +243,8 @@ function getExportTotals(findings: LeakFinding[]) {
       (total, leak) => total + leak.projectedSavings,
       0,
     ),
+    recoverableHours,
+    fteRecovered: recoverableHours / 160,
   };
 }
 

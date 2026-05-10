@@ -266,6 +266,11 @@ function App() {
     [findings],
   );
 
+  const teamSummaries = useMemo(
+    () => buildTeamSummaries(findings, totals.adjustedMonthlyCost),
+    [findings, totals.adjustedMonthlyCost],
+  );
+
   const sourceBreakdown = useMemo(
     () =>
       (Object.keys(dataTypeMeta) as DataType[]).map((sourceType) => {
@@ -485,8 +490,10 @@ function App() {
               categoryChart={categoryChart}
               sourceBreakdown={sourceBreakdown}
               fingerprintSummaries={fingerprintSummaries}
+              teamSummaries={teamSummaries}
               dataQuality={dataQuality}
               recoveryRate={recoveryRate}
+              onRecoveryRateChange={setRecoveryRate}
               isLoadingSamples={isLoadingSamples}
               onLoadSamples={loadSampleData}
               onOpenImport={() => setView("import")}
@@ -626,8 +633,10 @@ function DashboardView({
   categoryChart,
   sourceBreakdown,
   fingerprintSummaries,
+  teamSummaries,
   dataQuality,
   recoveryRate,
+  onRecoveryRateChange,
   isLoadingSamples,
   onLoadSamples,
   onOpenImport,
@@ -645,8 +654,10 @@ function DashboardView({
     percent: number;
   }[];
   fingerprintSummaries: FingerprintSummary[];
+  teamSummaries: TeamSummary[];
   dataQuality: DataQuality;
   recoveryRate: number;
+  onRecoveryRateChange: (value: number) => void;
   isLoadingSamples: boolean;
   onLoadSamples: () => void;
   onOpenImport: () => void;
@@ -683,6 +694,8 @@ function DashboardView({
 
   return (
     <div className="space-y-5">
+      <ObservabilityStrip />
+
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="overflow-hidden border-primary/20 bg-card/90 shadow-soft backdrop-blur">
           <CardContent className="p-5 lg:p-6">
@@ -710,9 +723,10 @@ function DashboardView({
               </Button>
             </div>
 
-            <div className="mt-6 grid gap-3 md:grid-cols-4">
+            <div className="mt-6 grid gap-3 md:grid-cols-5">
               <MetricTile label="Adjusted" value={formatCurrency(totals.adjustedMonthlyCost)} />
               <MetricTile label="Recoverable" value={formatCurrency(totals.projectedSavings)} />
+              <MetricTile label="FTE back" value={formatFte(totals.fteRecovered)} />
               <MetricTile label="After fixes" value={formatCurrency(afterFixes)} />
               <MetricTile label="Score" value={`${totals.workLeakScore}/100`} />
             </div>
@@ -727,6 +741,21 @@ function DashboardView({
         findings={findings}
         dataQuality={dataQuality}
       />
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <LeakReplayCard finding={topFinding} />
+        <FixSimulatorCard
+          finding={topFinding}
+          totals={totals}
+          recoveryRate={recoveryRate}
+          onRecoveryRateChange={onRecoveryRateChange}
+        />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <TeamLeakMap teamSummaries={teamSummaries} />
+        <IntegrationPanel />
+      </section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
         <Card className="bg-card/90">
@@ -850,6 +879,236 @@ function DashboardView({
   );
 }
 
+function ObservabilityStrip() {
+  return (
+    <Card className="overflow-hidden border-primary/20 bg-card/86 shadow-sm">
+      <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
+        <div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <Badge variant="secondary">Workflow Observability</Badge>
+            <Badge variant="outline">Privacy-first prototype</Badge>
+          </div>
+          <h2 className="text-xl font-semibold tracking-normal">
+            Find the workflow path, the leak, and the first operating change.
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            CSV data is parsed in this browser. WorkLeak stores demo state locally
+            and exports only when you click.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <MiniStat label="Prototype data" value="Local only" />
+          <MiniStat label="Connector model" value="Ready" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeakReplayCard({ finding }: { finding?: LeakFinding }) {
+  const replay = finding ? buildLeakReplay(finding) : [];
+
+  return (
+    <Card className="bg-card/90">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Leak Replay</CardTitle>
+            <CardDescription>One workflow, replayed as time turns into cost.</CardDescription>
+          </div>
+          {finding && <Badge variant="outline">{finding.affectedRecords[0]}</Badge>}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {finding ? (
+          <div className="grid gap-3 lg:grid-cols-4">
+            {replay.map((event, index) => (
+              <div
+                key={event.title}
+                className="relative rounded-lg border bg-muted/25 p-4 transition-transform duration-200 hover:-translate-y-0.5"
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+                    {index + 1}
+                  </span>
+                  <span className="text-xs font-medium uppercase text-muted-foreground">
+                    {event.time}
+                  </span>
+                </div>
+                <p className="font-semibold">{event.title}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {event.detail}
+                </p>
+                <p className="mt-3 text-sm font-semibold tabular">
+                  {formatCurrency(event.cost)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Load data to replay the top leak.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FixSimulatorCard({
+  finding,
+  totals,
+  recoveryRate,
+  onRecoveryRateChange,
+}: {
+  finding?: LeakFinding;
+  totals: ReturnType<typeof getTotals>;
+  recoveryRate: number;
+  onRecoveryRateChange: (value: number) => void;
+}) {
+  const simulatedSavings = finding
+    ? finding.adjustedMonthlyCost * recoveryRate
+    : totals.projectedSavings;
+  const simulatedHours = finding
+    ? finding.adjustedHoursLostPerMonth * recoveryRate
+    : totals.recoverableHours;
+
+  return (
+    <Card className="bg-card/90">
+      <CardHeader className="pb-3">
+        <CardTitle>Fix Simulator</CardTitle>
+        <CardDescription>Move the recovery assumption and watch the business case.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <Label htmlFor="recovery-simulator">Recovery assumption</Label>
+            <Badge variant="secondary">{Math.round(recoveryRate * 100)}%</Badge>
+          </div>
+          <input
+            id="recovery-simulator"
+            type="range"
+            min={30}
+            max={85}
+            step={5}
+            value={Math.round(recoveryRate * 100)}
+            onChange={(event) => onRecoveryRateChange(Number(event.target.value) / 100)}
+            className="w-full accent-primary"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <MiniStat label="Top-fix savings" value={formatCurrency(simulatedSavings)} />
+          <MiniStat label="Hours back" value={`${Math.round(simulatedHours)}h/mo`} />
+          <MiniStat label="FTE recovered" value={formatFte(simulatedHours / 160)} />
+          <MiniStat
+            label="Payback"
+            value={finding ? `${finding.paybackDays}d` : "n/a"}
+          />
+        </div>
+        <p className="text-sm leading-6 text-muted-foreground">
+          This is a planning simulator, not a claim of guaranteed savings.
+          Adjust the rate to match how aggressively the team can adopt the fix.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TeamLeakMap({ teamSummaries }: { teamSummaries: TeamSummary[] }) {
+  const topTeam = teamSummaries[0];
+
+  return (
+    <Card className="bg-card/90">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Org Leak Map</CardTitle>
+            <CardDescription>Which team leaks most, and where to start.</CardDescription>
+          </div>
+          {topTeam && <Badge variant="secondary">Top team: {topTeam.team}</Badge>}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {teamSummaries.slice(0, 5).map((team) => (
+          <div key={team.team} className="rounded-lg border bg-muted/25 p-3">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">{team.team}</p>
+                <p className="text-sm text-muted-foreground">
+                  {team.findingsCount} leak{team.findingsCount === 1 ? "" : "s"} ·{" "}
+                  {team.primaryFingerprint}
+                </p>
+              </div>
+              <p className="font-semibold tabular">{formatCurrency(team.adjustedCost)}</p>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${team.percent}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function IntegrationPanel() {
+  const [message, setMessage] = useState("CSV import is live. Connectors are demo previews.");
+  const connectors = [
+    { name: "Jira", source: "Tickets + approvals", icon: ListChecks },
+    { name: "GitHub", source: "Pull requests", icon: GitPullRequest },
+    { name: "Slack", source: "Blockers + handoffs", icon: Bot },
+    { name: "Calendar", source: "Meetings", icon: CalendarClock },
+  ];
+
+  return (
+    <Card className="bg-card/90">
+      <CardHeader className="pb-3">
+        <CardTitle>Integration-Ready</CardTitle>
+        <CardDescription>Prototype connectors with a real data model behind them.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-lg border bg-secondary/65 p-3 text-sm text-secondary-foreground">
+          Last synced 8 min ago · demo workspace
+        </div>
+        {connectors.map((connector) => {
+          const Icon = connector.icon;
+          return (
+            <div
+              key={connector.name}
+              className="flex items-center justify-between gap-3 rounded-lg border bg-muted/25 p-3"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-card">
+                  <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold">{connector.name}</p>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {connector.source}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setMessage(`${connector.name} connector preview selected. Use CSV import for the live demo.`)
+                }
+              >
+                Connect
+              </Button>
+            </div>
+          );
+        })}
+        <p className="text-sm leading-6 text-muted-foreground">{message}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function FocusCard({ finding }: { finding?: LeakFinding }) {
   return (
     <Card className="overflow-hidden border-primary/25 bg-primary text-primary-foreground shadow-soft">
@@ -937,6 +1196,9 @@ function CompactFinding({
         <MiniStat label="Effort" value={`${finding.implementationDays}d`} />
         <MiniStat label="Priority" value={finding.priority} />
       </div>
+      <div className="mt-3">
+        <ConfidenceDrivers finding={finding} />
+      </div>
     </details>
   );
 }
@@ -991,7 +1253,8 @@ function BoardroomSummaryCard({
           <p className="text-lg leading-8">
             Scanned {totals.importedRows} records. Adjusted waste is{" "}
             {formatCurrency(totals.adjustedMonthlyCost)} with{" "}
-            {formatCurrency(totals.projectedSavings)} recoverable.
+            {formatCurrency(totals.projectedSavings)} recoverable, equal to{" "}
+            {formatFte(totals.fteRecovered)}.
           </p>
           {topFinding && (
             <p className="mt-2 text-sm text-muted-foreground">
@@ -1001,9 +1264,9 @@ function BoardroomSummaryCard({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <MiniStat label="Score" value={`${totals.workLeakScore}/100`} />
+          <MiniStat label="FTE back" value={formatFte(totals.fteRecovered)} />
           <MiniStat label="Fields" value={`${dataQuality.requiredFieldRate}%`} />
           <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
-          <MiniStat label="Ignored" value={`${totals.healthyWorkflowCount}`} />
         </div>
       </CardContent>
     </Card>
@@ -1321,6 +1584,9 @@ function TimelineItem({
             </div>
             <EvidenceList finding={finding} compact />
           </div>
+          <div className="mt-3">
+            <ConfidenceDrivers finding={finding} />
+          </div>
         </details>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -1406,6 +1672,21 @@ function ImportView({
         </Card>
 
         <div className="space-y-5">
+          <Card className="border-primary/20 bg-secondary/60">
+            <CardHeader className="pb-3">
+              <CardTitle>Privacy First</CardTitle>
+              <CardDescription>
+                CSVs are parsed locally in this prototype.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Nothing is uploaded to a backend. Imported rows live in browser
+                storage until you replace or clear them.
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="bg-card/90">
             <CardHeader className="pb-3">
               <CardTitle>Demo Data</CardTitle>
@@ -1705,6 +1986,46 @@ function EvidenceList({
   );
 }
 
+function ConfidenceDrivers({ finding }: { finding: LeakFinding }) {
+  const confidenceLevel =
+    finding.confidence >= 85
+      ? "High"
+      : finding.confidence >= 75
+        ? "Medium"
+        : "Directional";
+  const drivers = [
+    `${confidenceLevel} confidence`,
+    `${finding.evidenceDetails.length} evidence fields`,
+    `${finding.affectedRecords.length} affected row${
+      finding.affectedRecords.length === 1 ? "" : "s"
+    }`,
+    `${finding.adjustedHoursLostPerMonth} adjusted h/mo`,
+  ];
+
+  return (
+    <div className="rounded-md border bg-card/75 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-semibold">How this was calculated</p>
+        <Badge variant="secondary">{finding.confidence}% confidence</Badge>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {drivers.map((driver) => (
+          <span
+            key={driver}
+            className="rounded-md border bg-muted/45 px-2 py-1 text-xs text-muted-foreground"
+          >
+            {driver}
+          </span>
+        ))}
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        Confidence combines source completeness, signal strength, repeat
+        frequency, and how far the workflow exceeded the threshold.
+      </p>
+    </div>
+  );
+}
+
 function CopyButton({
   label,
   copied,
@@ -1807,6 +2128,16 @@ interface FingerprintSummary {
   color: string;
 }
 
+interface TeamSummary {
+  team: string;
+  findingsCount: number;
+  adjustedCost: number;
+  projectedSavings: number;
+  primaryFingerprint: LeakFingerprint;
+  bestFixScore: number;
+  percent: number;
+}
+
 interface DataQuality {
   status: "Good" | "Fair";
   requiredFieldRate: number;
@@ -1830,6 +2161,13 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
     (total, finding) => total + finding.projectedSavings,
     0,
   );
+  const recoverableHours = findings.reduce((total, finding) => {
+    const recoveryShare =
+      finding.adjustedMonthlyCost > 0
+        ? finding.projectedSavings / finding.adjustedMonthlyCost
+        : 0;
+    return total + finding.adjustedHoursLostPerMonth * recoveryShare;
+  }, 0);
   const importedRows =
     data.tickets.length + data.meetings.length + data.pullRequests.length;
   const flaggedRecordCount = new Set(
@@ -1860,6 +2198,8 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
     grossMonthlyCost,
     adjustedMonthlyCost,
     projectedSavings,
+    recoverableHours,
+    fteRecovered: recoverableHours / 160,
     importedRows,
     flaggedRecordCount,
     healthyWorkflowCount,
@@ -1952,6 +2292,91 @@ function buildFingerprintSummaries(findings: LeakFinding[]): FingerprintSummary[
     .sort((a, b) => b.adjustedCost - a.adjustedCost);
 }
 
+function buildTeamSummaries(
+  findings: LeakFinding[],
+  totalAdjustedCost: number,
+): TeamSummary[] {
+  const grouped = findings.reduce<Record<string, LeakFinding[]>>(
+    (groups, finding) => {
+      groups[finding.team] = groups[finding.team]
+        ? [...groups[finding.team], finding]
+        : [finding];
+      return groups;
+    },
+    {},
+  );
+
+  return Object.entries(grouped)
+    .map(([team, group]) => {
+      const fingerprintCounts = group.reduce<Record<string, number>>(
+        (counts, finding) => {
+          counts[finding.fingerprint] = (counts[finding.fingerprint] ?? 0) + 1;
+          return counts;
+        },
+        {},
+      );
+      const primaryFingerprint = Object.entries(fingerprintCounts).sort(
+        (a, b) => b[1] - a[1],
+      )[0]?.[0] as LeakFingerprint;
+      const adjustedCost = group.reduce(
+        (total, finding) => total + finding.adjustedMonthlyCost,
+        0,
+      );
+
+      return {
+        team,
+        findingsCount: group.length,
+        adjustedCost,
+        projectedSavings: group.reduce(
+          (total, finding) => total + finding.projectedSavings,
+          0,
+        ),
+        primaryFingerprint,
+        bestFixScore: Math.max(
+          ...group.map((finding) => finding.fixThisFirstScore),
+        ),
+        percent:
+          totalAdjustedCost > 0
+            ? Math.max(4, Math.round((adjustedCost / totalAdjustedCost) * 100))
+            : 0,
+      };
+    })
+    .sort((a, b) => b.adjustedCost - a.adjustedCost);
+}
+
+function buildLeakReplay(finding: LeakFinding) {
+  const firstRecord = finding.affectedRecords[0] ?? "source row";
+  const halfCost = finding.adjustedMonthlyCost * 0.5;
+  const finalCost = finding.adjustedMonthlyCost;
+
+  return [
+    {
+      time: "Day 1",
+      title: "Workflow starts",
+      detail: `${firstRecord} enters ${finding.team}.`,
+      cost: 0,
+    },
+    {
+      time: "Signal",
+      title: finding.simulation.currentLabel,
+      detail: `${finding.simulation.currentValue} exceeds the operating threshold.`,
+      cost: halfCost,
+    },
+    {
+      time: "Pattern",
+      title: finding.fingerprint,
+      detail: finding.evidence,
+      cost: finalCost,
+    },
+    {
+      time: "Fix",
+      title: finding.simulation.afterLabel,
+      detail: `${finding.recommendation}`,
+      cost: finding.simulation.afterMonthlyCost,
+    },
+  ];
+}
+
 function formatAutomationRecipe(finding: LeakFinding) {
   return [
     `Automation Recipe: ${finding.automationRecipe.title}`,
@@ -2008,6 +2433,10 @@ function formatBoardroomSummary(findings: LeakFinding[], dataQuality: DataQualit
   )} recoverable. The highest-ROI fix is ${topFinding.fingerprint.toLowerCase()} in ${
     topFinding.team
   }.`;
+}
+
+function formatFte(value: number) {
+  return `${value.toFixed(value >= 1 ? 1 : 2)} FTE`;
 }
 
 function getSuggestedOwner(finding: LeakFinding) {
