@@ -1386,6 +1386,26 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ScoreChip({ score }: { score: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive dark:text-red-100">
+      <span>Fix-first</span>
+      <span className="tabular">{score}/100</span>
+    </span>
+  );
+}
+
+function ActionPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-card/80 px-3 py-2">
+      <p className="text-[11px] font-medium uppercase text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-0.5 text-sm font-semibold tabular">{value}</p>
+    </div>
+  );
+}
+
 function ActionPlanView({
   findings,
   hasData,
@@ -1608,61 +1628,92 @@ function TimelineItem({
           accent.card,
         )}
       >
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant={severityVariant(finding.priority)}>
-                {finding.fixThisFirstScore}/100
-              </Badge>
-              <Badge variant="outline">{finding.fingerprint}</Badge>
-              <Badge variant="secondary">{finding.confidence}%</Badge>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <ScoreChip score={finding.fixThisFirstScore} />
+              <Badge variant="outline">Pattern: {finding.fingerprint}</Badge>
+              <Badge variant="secondary">{finding.confidence}% confidence</Badge>
             </div>
             <h3 className="mt-3 text-lg font-semibold">{finding.title}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {getSuggestedOwner(finding)}
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-left lg:w-[360px]">
-            <MiniStat label="Savings" value={formatCurrency(finding.projectedSavings)} />
-            <MiniStat label="Effort" value={`${finding.implementationDays}d`} />
-            <MiniStat label="Payback" value={`${finding.paybackDays}d`} />
+          <div className="flex flex-wrap gap-2 lg:max-w-[420px] lg:justify-end">
+            <ActionPill label="Savings" value={formatCurrency(finding.projectedSavings)} />
+            <ActionPill label="Effort" value={`${finding.implementationDays}d`} />
+            <ActionPill label="Payback" value={`${finding.paybackDays}d`} />
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Affected:</span>
-          {finding.affectedRecords.slice(0, 5).map((recordId) => (
+          {finding.affectedRecords.slice(0, 4).map((recordId) => (
             <span key={recordId} className="rounded-md border bg-card/80 px-2 py-1">
               {recordId}
             </span>
           ))}
+          {finding.affectedRecords.length > 4 && (
+            <span className="rounded-md border bg-card/80 px-2 py-1">
+              +{finding.affectedRecords.length - 4}
+            </span>
+          )}
         </div>
 
-        <div className={cn("mt-4 rounded-md border p-3 text-sm leading-6", accent.note)}>
-          {finding.recommendation}
+        <div className={cn("mt-4 rounded-md border p-3", accent.note)}>
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            Recommended fix
+          </p>
+          <p className="mt-1 text-sm leading-6">{finding.recommendation}</p>
+        </div>
+
+        <BeforeAfterMini finding={finding} />
+
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            First three steps
+          </p>
+          <ol className="grid gap-2">
+            {finding.implementationSteps.slice(0, 3).map((step, stepIndex) => (
+              <li
+                key={step}
+                className="flex gap-3 rounded-md border bg-card/70 p-3 text-sm"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+                  {stepIndex + 1}
+                </span>
+                <span className="leading-6">{step}</span>
+              </li>
+            ))}
+          </ol>
         </div>
 
         <div className="mt-4 rounded-md border bg-card/70 p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold">AI-powered action plan</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Optional server-generated plan. Templates remain available.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onGenerateGeminiPlan(finding)}
-              disabled={geminiStatus === "loading"}
-            >
-              {geminiStatus === "loading" ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
                 <Sparkles className="h-4 w-4" aria-hidden="true" />
-              )}
-              {geminiStatus === "ready" ? "Regenerate" : "Generate"}
-            </Button>
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold">AI plan</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onGenerateGeminiPlan(finding)}
+                disabled={geminiStatus === "loading"}
+              >
+                {geminiStatus === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                )}
+                {geminiStatus === "ready" ? "Regenerate" : "Generate"}
+              </Button>
+            </div>
           </div>
           {geminiError && (
             <p className="mt-3 text-sm leading-6 text-destructive">
@@ -1677,28 +1728,6 @@ function TimelineItem({
               onCopy={onCopy}
             />
           )}
-        </div>
-
-        <BeforeAfterMini finding={finding} />
-
-        <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          {finding.implementationSteps.slice(0, 3).map((step, stepIndex) => {
-            const stepAccent = getStepAccent(stepIndex);
-            return (
-              <div
-                key={step}
-                className={cn(
-                  "rounded-md border p-3 text-sm shadow-sm transition-transform duration-200 hover:-translate-y-0.5",
-                  stepAccent,
-                )}
-              >
-                <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                  Step {stepIndex + 1}
-                </div>
-                {step}
-              </div>
-            );
-          })}
         </div>
 
         <details className={cn("mt-4 rounded-md border p-3 text-sm", accent.details)}>
@@ -1746,10 +1775,16 @@ function TimelineItem({
 
 function BeforeAfterMini({ finding }: { finding: LeakFinding }) {
   return (
-    <div className="mt-4 grid gap-3 rounded-md border bg-card/65 p-3 sm:grid-cols-3">
-      <MiniStat label={finding.simulation.currentLabel} value={finding.simulation.currentValue} />
-      <MiniStat label={finding.simulation.afterLabel} value={finding.simulation.afterValue} />
-      <MiniStat label="Savings" value={formatCurrency(finding.simulation.savings)} />
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-md border bg-card/65 px-3 py-2 text-sm">
+      <span className="text-muted-foreground">{finding.simulation.currentLabel}</span>
+      <span className="font-semibold tabular">{finding.simulation.currentValue}</span>
+      <span className="text-muted-foreground">→</span>
+      <span className="text-muted-foreground">{finding.simulation.afterLabel}</span>
+      <span className="font-semibold tabular">{finding.simulation.afterValue}</span>
+      <span className="hidden text-muted-foreground sm:inline">·</span>
+      <span className="font-semibold tabular">
+        Saves {formatCurrency(finding.simulation.savings)}
+      </span>
     </div>
   );
 }
@@ -1770,20 +1805,15 @@ function GeneratedPlanPanel({
       <p className="text-sm leading-6 text-muted-foreground">
         {plan.executiveSummary}
       </p>
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-2">
         {plan.implementationSteps.slice(0, 3).map((step, index) => (
-          <div key={step} className="rounded-md border bg-muted/35 p-3 text-sm">
-            <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-              AI step {index + 1}
-            </p>
-            {step}
+          <div key={step} className="flex gap-3 rounded-md border bg-muted/35 p-3 text-sm">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-xs font-semibold text-secondary-foreground">
+              {index + 1}
+            </span>
+            <span className="leading-6">{step}</span>
           </div>
         ))}
-      </div>
-      <div className="rounded-md border bg-muted/35 p-3 text-sm">
-        <p className="font-semibold">Generated automation recipe</p>
-        <p className="mt-2 text-muted-foreground">{plan.automationRecipe.trigger}</p>
-        <p className="mt-2 text-muted-foreground">{plan.automationRecipe.action}</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <CopyButton
@@ -2976,16 +3006,6 @@ function getActionAccent(index: number, fingerprint: LeakFingerprint) {
   return presets[index % presets.length];
 }
 
-function getStepAccent(index: number) {
-  const accents = [
-    "step-accent-teal",
-    "step-accent-amber",
-    "step-accent-emerald",
-  ];
-
-  return accents[index % accents.length];
-}
-
 async function copyToClipboard(text: string) {
   if (window.navigator.clipboard) {
     await window.navigator.clipboard.writeText(text);
@@ -3001,12 +3021,6 @@ async function copyToClipboard(text: string) {
   textArea.select();
   document.execCommand("copy");
   document.body.removeChild(textArea);
-}
-
-function severityVariant(severity: LeakFinding["severity"]) {
-  if (severity === "Critical") return "danger";
-  if (severity === "High") return "amber";
-  return "teal";
 }
 
 export default App;
