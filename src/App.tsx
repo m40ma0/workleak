@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  ArrowDownToLine,
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
   BarChart3,
   Bot,
   CalendarClock,
   CheckCircle2,
+  Cloud,
   Copy,
   Database,
   Download,
@@ -15,24 +23,21 @@ import {
   ListChecks,
   Loader2,
   Moon,
-  Play,
+  Settings,
   Sparkles,
   Sun,
   Target,
   Upload,
+  UserCircle,
   Workflow,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  LabelList,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User as FirebaseUser,
+} from "firebase/auth";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import {
@@ -53,6 +58,12 @@ import {
   TableRow,
 } from "./components/ui/table";
 import { parseCsvForType } from "./lib/csv";
+import {
+  ensureUserWorkspace,
+  fetchSavedReports,
+  saveAnalysisSnapshot,
+  type SavedReportSummary,
+} from "./lib/cloudPersistence";
 import { detectLeaks } from "./lib/detection";
 import {
   buildCsvTemplate,
@@ -62,6 +73,7 @@ import {
   downloadMarkdown,
   downloadText,
 } from "./lib/export";
+import { firebaseAuth, firebaseEnabled } from "./lib/firebase";
 import { cn, formatCurrency } from "./lib/utils";
 import type {
   DataType,
@@ -74,9 +86,11 @@ import type {
   WorkflowData,
 } from "./types";
 
-type View = "dashboard" | "actions" | "import" | "data";
+type View = "dashboard" | "actions" | "import" | "data" | "settings";
 type Theme = "light" | "dark";
 type DataOrigin = "empty" | "sample" | "upload";
+
+const CategoryCostChart = lazy(() => import("./components/CategoryCostChart"));
 
 interface GeneratedActionPlan {
   executiveSummary: string;
@@ -93,6 +107,7 @@ interface GeneratedActionPlan {
 }
 
 type GeminiStatus = "idle" | "loading" | "ready" | "error";
+type CloudStatus = "idle" | "loading" | "saving" | "saved" | "error";
 
 const storageKey = "workleak-demo-state-v4";
 
@@ -107,34 +122,7 @@ const tabs: { id: View; label: string; icon: typeof BarChart3 }[] = [
   { id: "actions", label: "Action Plan", icon: Bot },
   { id: "import", label: "Import", icon: Upload },
   { id: "data", label: "Raw Data", icon: Database },
-];
-
-const demoSteps: { view: View; title: string; text: string }[] = [
-  {
-    view: "dashboard",
-    title: "Executive Snapshot",
-    text: "Lead with adjusted waste, healthy work ignored, and the best first fix.",
-  },
-  {
-    view: "dashboard",
-    title: "Fix This First",
-    text: "Show the ROI ranking: savings, confidence, effort, and payback.",
-  },
-  {
-    view: "dashboard",
-    title: "Leak Fingerprints",
-    text: "Name the pattern so the team remembers what to fix.",
-  },
-  {
-    view: "actions",
-    title: "Monday Plan",
-    text: "Turn the top leaks into owners, next steps, recipes, and Jira text.",
-  },
-  {
-    view: "actions",
-    title: "Export",
-    text: "Copy the plan or export Markdown, JSON, and CSV.",
-  },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 const dataTypeMeta: Record<
@@ -196,7 +184,7 @@ const fingerprintColor: Record<LeakFingerprint, string> = {
 
 const exportDefaults = {
   reportTitle: "WorkLeak Action Plan",
-  companyName: "Demo Company",
+  companyName: "Acme Operations",
 };
 
 function App() {
@@ -211,7 +199,17 @@ function App() {
   const [activeDataType, setActiveDataType] = useState<DataType>("tickets");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
-  const [demoStep, setDemoStep] = useState<number | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(!firebaseEnabled);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"signIn" | "signUp">("signIn");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authPanelOpen, setAuthPanelOpen] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [savedReports, setSavedReports] = useState<SavedReportSummary[]>([]);
+  const [cloudStatus, setCloudStatus] = useState<CloudStatus>("idle");
+  const [cloudMessage, setCloudMessage] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
@@ -263,6 +261,34 @@ function App() {
     theme,
     dataOrigin,
   ]);
+
+  useEffect(() => {
+    if (!firebaseAuth) return undefined;
+
+    return onAuthStateChanged(firebaseAuth, async (user) => {
+      setFirebaseUser(user);
+      setAuthReady(true);
+
+      if (!user) {
+        setWorkspaceId(null);
+        setSavedReports([]);
+        return;
+      }
+
+      setCloudStatus("loading");
+      setCloudMessage("");
+
+      try {
+        const ensuredWorkspaceId = await ensureUserWorkspace(user, companyName);
+        setWorkspaceId(ensuredWorkspaceId);
+        setSavedReports(await fetchSavedReports(ensuredWorkspaceId));
+        setCloudStatus("idle");
+      } catch (error) {
+        setCloudStatus("error");
+        setCloudMessage(getErrorMessage(error));
+      }
+    });
+  }, [companyName]);
 
   const findings = useMemo(
     () => detectLeaks(data, averageHourlyCost, recoveryRate),
@@ -416,102 +442,125 @@ function App() {
     );
   }
 
-  async function startGuidedDemo() {
-    if (!hasData) {
-      await loadSampleData();
-    }
-    setView("dashboard");
-    setDemoStep(0);
-  }
-
-  function handleDemoNext() {
-    if (demoStep === null) return;
-    const nextStep = demoStep + 1;
-
-    if (nextStep >= demoSteps.length) {
-      setDemoStep(null);
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!firebaseAuth) {
+      setCloudStatus("error");
+      setCloudMessage("Firebase is not configured.");
       return;
     }
 
-    setDemoStep(nextStep);
-    setView(demoSteps[nextStep].view);
+    setAuthBusy(true);
+    setCloudStatus("loading");
+    setCloudMessage("");
+
+    try {
+      if (authMode === "signUp") {
+        await createUserWithEmailAndPassword(
+          firebaseAuth,
+          authEmail.trim(),
+          authPassword,
+        );
+      } else {
+        await signInWithEmailAndPassword(
+          firebaseAuth,
+          authEmail.trim(),
+          authPassword,
+        );
+      }
+      setAuthPassword("");
+      setAuthPanelOpen(false);
+    } catch (error) {
+      setCloudStatus("error");
+      setCloudMessage(getErrorMessage(error));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleCloudSignOut() {
+    if (!firebaseAuth) return;
+    await signOut(firebaseAuth);
+    setAuthPanelOpen(false);
+    setCloudStatus("idle");
+    setCloudMessage("");
+  }
+
+  async function refreshSavedReports(ensuredWorkspaceId = workspaceId) {
+    if (!ensuredWorkspaceId) return;
+    setSavedReports(await fetchSavedReports(ensuredWorkspaceId));
+  }
+
+  async function handleSaveToCloud() {
+    if (!firebaseUser || !workspaceId) {
+      setCloudStatus("error");
+      setCloudMessage("Sign in before saving a WorkLeak report.");
+      return;
+    }
+
+    if (!hasData || findings.length === 0) {
+      setCloudStatus("error");
+      setCloudMessage("Load or upload workflow data before saving.");
+      return;
+    }
+
+    setCloudStatus("saving");
+    setCloudMessage("");
+
+    try {
+      const saved = await saveAnalysisSnapshot({
+        user: firebaseUser,
+        workspaceId,
+        reportTitle,
+        companyName,
+        dataOrigin,
+        data,
+        findings,
+        totals,
+        dataQuality,
+        averageHourlyCost,
+        recoveryRate,
+      });
+      await refreshSavedReports(workspaceId);
+      setCloudStatus("saved");
+      setCloudMessage(`Saved report ${saved.reportId.slice(0, 6)} to Firestore.`);
+    } catch (error) {
+      setCloudStatus("error");
+      setCloudMessage(getErrorMessage(error));
+    }
   }
 
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,hsl(var(--secondary))_0,transparent_30%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted))_100%)] dark:bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.16)_0,transparent_32%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(205_28%_8%)_100%)]" />
 
-      <header className="sticky top-0 z-40 border-b bg-background/86 backdrop-blur-xl">
-        <div className="container flex flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-1.5 shadow-sm ring-1 ring-black/5">
-              <img
-                src="/logo.png"
-                alt="WorkLeak"
-                className="h-full w-full object-contain"
-              />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal">
-                WorkLeak
-              </h1>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Observability for how work moves through your company.
-              </p>
-            </div>
-          </div>
+      <ProductHeader
+        tabs={tabs}
+        view={view}
+        onViewChange={setView}
+        theme={theme}
+        onThemeToggle={() =>
+          setTheme((current) => (current === "dark" ? "light" : "dark"))
+        }
+        firebaseEnabled={firebaseEnabled}
+        authReady={authReady}
+        user={firebaseUser}
+        authMode={authMode}
+        authEmail={authEmail}
+        authPassword={authPassword}
+        authBusy={authBusy}
+        authPanelOpen={authPanelOpen}
+        cloudStatus={cloudStatus}
+        cloudMessage={cloudMessage}
+        onAuthPanelOpenChange={setAuthPanelOpen}
+        onAuthModeChange={setAuthMode}
+        onAuthEmailChange={setAuthEmail}
+        onAuthPasswordChange={setAuthPassword}
+        onAuthSubmit={handleAuthSubmit}
+        onSignOut={handleCloudSignOut}
+      />
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[160px_145px_48px_150px_auto] xl:items-end">
-            <MoneyInput value={averageHourlyCost} onChange={setAverageHourlyCost} />
-            <PercentInput value={recoveryRate} onChange={setRecoveryRate} />
-            <ThemeToggle
-              theme={theme}
-              onToggle={() =>
-                setTheme((current) => (current === "dark" ? "light" : "dark"))
-              }
-            />
-            <Button
-              variant="secondary"
-              onClick={startGuidedDemo}
-              disabled={isLoadingSamples}
-            >
-              {isLoadingSamples ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Play className="h-4 w-4" aria-hidden="true" />
-              )}
-              Start Demo
-            </Button>
-            <Button onClick={handleExportMarkdown} disabled={!findings.length}>
-              <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
-              Export
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="container py-5">
-        <nav className="mb-5 flex gap-2 overflow-x-auto rounded-lg border bg-card/75 p-1 shadow-sm backdrop-blur">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setView(tab.id)}
-                className={cn(
-                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium transition-all",
-                  view === tab.id
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+      <div className="container py-6">
 
         <div key={view} className="page-transition">
           {view === "dashboard" && (
@@ -552,11 +601,7 @@ function App() {
             <ImportView
               data={data}
               importErrors={importErrors}
-              reportTitle={reportTitle}
-              companyName={companyName}
               isLoadingSamples={isLoadingSamples}
-              onReportTitleChange={setReportTitle}
-              onCompanyNameChange={setCompanyName}
               onFileUpload={handleFileUpload}
               onLoadSamples={loadSampleData}
               onTemplateDownload={handleTemplateDownload}
@@ -570,15 +615,34 @@ function App() {
               onActiveDataTypeChange={setActiveDataType}
             />
           )}
+
+          {view === "settings" && (
+            <SettingsView
+              averageHourlyCost={averageHourlyCost}
+              recoveryRate={recoveryRate}
+              reportTitle={reportTitle}
+              companyName={companyName}
+              firebaseEnabled={firebaseEnabled}
+              authReady={authReady}
+              user={firebaseUser}
+              cloudStatus={cloudStatus}
+              cloudMessage={cloudMessage}
+              savedReports={savedReports}
+              hasData={hasData}
+              findingsCount={findings.length}
+              onAverageHourlyCostChange={setAverageHourlyCost}
+              onRecoveryRateChange={setRecoveryRate}
+              onReportTitleChange={setReportTitle}
+              onCompanyNameChange={setCompanyName}
+              onSave={handleSaveToCloud}
+              onOpenImport={() => setView("import")}
+              onExportMarkdown={handleExportMarkdown}
+              onExportJson={handleExportJson}
+              onExportCsv={handleExportCsv}
+            />
+          )}
         </div>
 
-        {demoStep !== null && (
-          <GuidedDemoOverlay
-            step={demoStep}
-            onNext={handleDemoNext}
-            onClose={() => setDemoStep(null)}
-          />
-        )}
       </div>
     </main>
   );
@@ -647,16 +711,280 @@ function ThemeToggle({
   const Icon = theme === "dark" ? Sun : Moon;
 
   return (
-    <div className="self-end">
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={onToggle}
+      aria-label="Toggle dark mode"
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+    </Button>
+  );
+}
+
+function ProductHeader({
+  tabs,
+  view,
+  onViewChange,
+  theme,
+  onThemeToggle,
+  firebaseEnabled: isFirebaseEnabled,
+  authReady,
+  user,
+  authMode,
+  authEmail,
+  authPassword,
+  authBusy,
+  authPanelOpen,
+  cloudStatus,
+  cloudMessage,
+  onAuthPanelOpenChange,
+  onAuthModeChange,
+  onAuthEmailChange,
+  onAuthPasswordChange,
+  onAuthSubmit,
+  onSignOut,
+}: {
+  tabs: { id: View; label: string; icon: typeof BarChart3 }[];
+  view: View;
+  onViewChange: (view: View) => void;
+  theme: Theme;
+  onThemeToggle: () => void;
+  firebaseEnabled: boolean;
+  authReady: boolean;
+  user: FirebaseUser | null;
+  authMode: "signIn" | "signUp";
+  authEmail: string;
+  authPassword: string;
+  authBusy: boolean;
+  authPanelOpen: boolean;
+  cloudStatus: CloudStatus;
+  cloudMessage: string;
+  onAuthPanelOpenChange: (open: boolean) => void;
+  onAuthModeChange: (mode: "signIn" | "signUp") => void;
+  onAuthEmailChange: (value: string) => void;
+  onAuthPasswordChange: (value: string) => void;
+  onAuthSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <header className="sticky top-0 z-40 border-b bg-background/88 shadow-sm backdrop-blur-xl">
+      <div className="container flex flex-col gap-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-1.5 shadow-sm ring-1 ring-black/5 dark:bg-slate-50">
+            <img
+              src="/logo.png"
+              alt="WorkLeak"
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-normal">WorkLeak</h1>
+          </div>
+        </div>
+
+        <nav className="flex gap-1 overflow-x-auto rounded-lg border bg-card/76 p-1 shadow-sm xl:order-none">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => onViewChange(tab.id)}
+                className={cn(
+                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium transition-all",
+                  view === tab.id
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="relative flex items-center gap-2 xl:justify-end">
+          <ThemeToggle theme={theme} onToggle={onThemeToggle} />
+          <AccountControl
+            firebaseEnabled={isFirebaseEnabled}
+            authReady={authReady}
+            user={user}
+            authPanelOpen={authPanelOpen}
+            cloudStatus={cloudStatus}
+            onAuthPanelOpenChange={onAuthPanelOpenChange}
+            onSignOut={onSignOut}
+          />
+          {authPanelOpen && !user && (
+            <AuthPanel
+              authMode={authMode}
+              authEmail={authEmail}
+              authPassword={authPassword}
+              authBusy={authBusy}
+              cloudStatus={cloudStatus}
+              cloudMessage={cloudMessage}
+              onAuthModeChange={onAuthModeChange}
+              onAuthEmailChange={onAuthEmailChange}
+              onAuthPasswordChange={onAuthPasswordChange}
+              onAuthSubmit={onAuthSubmit}
+            />
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function AccountControl({
+  firebaseEnabled: isFirebaseEnabled,
+  authReady,
+  user,
+  authPanelOpen,
+  cloudStatus,
+  onAuthPanelOpenChange,
+  onSignOut,
+}: {
+  firebaseEnabled: boolean;
+  authReady: boolean;
+  user: FirebaseUser | null;
+  authPanelOpen: boolean;
+  cloudStatus: CloudStatus;
+  onAuthPanelOpenChange: (open: boolean) => void;
+  onSignOut: () => void;
+}) {
+  if (!isFirebaseEnabled) {
+    return (
+      <Badge variant="outline" className="h-10 px-3">
+        Cloud off
+      </Badge>
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <Button variant="outline" disabled>
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Connecting
+      </Button>
+    );
+  }
+
+  if (!user) {
+    return (
       <Button
-        variant="outline"
-        size="icon"
-        onClick={onToggle}
-        aria-label="Toggle dark mode"
+        type="button"
+        variant={authPanelOpen ? "secondary" : "outline"}
+        onClick={() => onAuthPanelOpenChange(!authPanelOpen)}
       >
-        <Icon className="h-4 w-4" aria-hidden="true" />
+        <UserCircle className="h-4 w-4" aria-hidden="true" />
+        Sign in
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="hidden max-w-[190px] items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm md:flex">
+        <UserCircle className="h-4 w-4 text-primary" aria-hidden="true" />
+        <span className="truncate">{user.email}</span>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onSignOut}
+        disabled={cloudStatus === "saving"}
+      >
+        Sign out
       </Button>
     </div>
+  );
+}
+
+function AuthPanel({
+  authMode,
+  authEmail,
+  authPassword,
+  authBusy,
+  cloudStatus,
+  cloudMessage,
+  onAuthModeChange,
+  onAuthEmailChange,
+  onAuthPasswordChange,
+  onAuthSubmit,
+}: {
+  authMode: "signIn" | "signUp";
+  authEmail: string;
+  authPassword: string;
+  authBusy: boolean;
+  cloudStatus: CloudStatus;
+  cloudMessage: string;
+  onAuthModeChange: (mode: "signIn" | "signUp") => void;
+  onAuthEmailChange: (value: string) => void;
+  onAuthPasswordChange: (value: string) => void;
+  onAuthSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Card className="absolute right-0 top-12 z-50 w-[min(360px,calc(100vw-2rem))] bg-card shadow-soft page-transition">
+      <CardHeader className="pb-3">
+        <CardTitle>{authMode === "signIn" ? "Sign in" : "Create account"}</CardTitle>
+        <CardDescription>Save reports to your private Firestore workspace.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form className="space-y-3" onSubmit={onAuthSubmit}>
+          <div>
+            <Label htmlFor="cloud-email">Email</Label>
+            <Input
+              id="cloud-email"
+              type="email"
+              value={authEmail}
+              onChange={(event) => onAuthEmailChange(event.target.value)}
+              placeholder="you@company.com"
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="cloud-password">Password</Label>
+            <Input
+              id="cloud-password"
+              type="password"
+              value={authPassword}
+              onChange={(event) => onAuthPasswordChange(event.target.value)}
+              placeholder="6+ characters"
+              minLength={6}
+              required
+            />
+          </div>
+          {cloudMessage && (
+            <p
+              className={cn(
+                "text-sm",
+                cloudStatus === "error" ? "text-destructive" : "text-muted-foreground",
+              )}
+            >
+              {cloudMessage}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={authBusy}>
+              {authBusy && (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              )}
+              {authMode === "signIn" ? "Sign in" : "Create account"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                onAuthModeChange(authMode === "signIn" ? "signUp" : "signIn")
+              }
+            >
+              {authMode === "signIn" ? "Create account" : "Use sign in"}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -706,7 +1034,7 @@ function DashboardView({
       <EmptyState
         icon={<Workflow className="h-7 w-7 text-primary" aria-hidden="true" />}
         title="See where work leaks time."
-        description="Load demo data or upload CSVs to get adjusted waste, fix-first priorities, and an action plan."
+        description="Load sample data or upload CSVs to get adjusted waste, fix-first priorities, and an action plan."
         action={
           <div className="flex flex-col justify-center gap-3 sm:flex-row">
             <Button onClick={onLoadSamples} disabled={isLoadingSamples}>
@@ -853,51 +1181,15 @@ function DashboardView({
             <CardDescription>Where the money is leaking.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mx-auto h-72 w-full max-w-[680px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={categoryChart}
-                  layout="vertical"
-                  margin={{ top: 8, right: 64, left: 8, bottom: 8 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis
-                    type="number"
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(value) => `$${Number(value) / 1000}k`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="category"
-                    width={116}
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "hsl(var(--muted))" }}
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: 8,
-                    }}
-                    formatter={(value) => formatCurrency(Number(value))}
-                  />
-                  <Bar dataKey="cost" radius={[0, 6, 6, 0]}>
-                    {categoryChart.map((entry) => (
-                      <Cell key={entry.category} fill={entry.fill} />
-                    ))}
-                    <LabelList
-                      dataKey="cost"
-                      position="right"
-                      formatter={(value: number) => formatCurrency(value)}
-                      className="fill-foreground text-xs font-semibold"
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <Suspense
+              fallback={
+                <div className="mx-auto grid h-72 w-full max-w-[680px] place-items-center rounded-md border bg-muted/25 text-sm text-muted-foreground">
+                  Loading chart...
+                </div>
+              }
+            >
+              <CategoryCostChart data={categoryChart} />
+            </Suspense>
           </CardContent>
         </Card>
       </section>
@@ -906,7 +1198,7 @@ function DashboardView({
         <CardContent className="grid gap-4 p-5 lg:grid-cols-3 xl:grid-cols-5">
           <MethodNote title="Adjusted waste" text="Deduplicates overlapping signals." />
           <MethodNote title="Health" text="100 minus leak severity." />
-          <MethodNote title="Fix-first" text="Savings and confidence against effort." />
+          <MethodNote title="Fix priority" text="Savings and confidence against effort." />
           <MethodNote title="Confidence" text="Signal strength and completeness." />
           <MethodNote
             title="Recovery"
@@ -1100,7 +1392,7 @@ function TeamLeakMap({ teamSummaries }: { teamSummaries: TeamSummary[] }) {
 }
 
 function IntegrationPanel() {
-  const [message, setMessage] = useState("CSV import is live. Connectors are demo previews.");
+  const [message, setMessage] = useState("CSV import is live. Connectors are preview blueprints.");
   const connectors = [
     { name: "Jira", source: "Tickets + approvals", icon: ListChecks },
     { name: "GitHub", source: "Pull requests", icon: GitPullRequest },
@@ -1116,7 +1408,7 @@ function IntegrationPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="rounded-lg border bg-secondary/65 p-3 text-sm text-secondary-foreground">
-          Last synced 8 min ago · demo workspace
+          Last synced 8 min ago · preview workspace
         </div>
         {connectors.map((connector) => {
           const Icon = connector.icon;
@@ -1140,7 +1432,7 @@ function IntegrationPanel() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  setMessage(`${connector.name} preview selected. Use CSV import for the live demo.`)
+                  setMessage(`${connector.name} preview selected. Use CSV import in this build.`)
                 }
               >
                 Preview
@@ -1169,7 +1461,7 @@ function FocusCard({ finding }: { finding?: LeakFinding }) {
               <DarkStat label="Savings" value={formatCurrency(finding.projectedSavings)} />
               <DarkStat label="Payback" value={`${finding.paybackDays}d`} />
               <DarkStat label="Effort" value={`${finding.implementationDays}d`} />
-              <DarkStat label="Fix-first" value={`${finding.fixThisFirstScore}/100`} />
+              <DarkStat label="Fix priority" value={`${finding.fixThisFirstScore}`} />
             </div>
           </>
         ) : (
@@ -1388,9 +1680,12 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 function ScoreChip({ score }: { score: number }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-destructive/25 bg-destructive/10 px-2.5 py-1 text-xs font-semibold text-destructive dark:text-red-100">
-      <span>Fix-first</span>
-      <span className="tabular">{score}/100</span>
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary"
+      title="Fix priority combines savings, confidence, effort, and payback. Higher means better to fix first."
+    >
+      <span>Fix priority</span>
+      <span className="tabular">{score}</span>
     </span>
   );
 }
@@ -1491,10 +1786,10 @@ function ActionPlanView({
           <div>
             <Badge variant="secondary">Monday Morning Plan</Badge>
             <h2 className="mt-2 text-2xl font-semibold tracking-normal">
-              Three fixes to start with.
+              Priority action plan.
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Owners, effort, payback, and one-click handoff.
+              Three manager-ready fixes with owner, payoff, and handoff.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1523,7 +1818,7 @@ function ActionPlanView({
         <Card className="bg-card/90">
           <CardContent className="p-5">
             <div className="relative space-y-4 before:absolute before:left-[19px] before:top-3 before:h-[calc(100%-24px)] before:w-px before:bg-border">
-              {findings.slice(0, 6).map((finding, index) => (
+              {findings.slice(0, 3).map((finding, index) => (
                 <TimelineItem
                   key={finding.id}
                   finding={finding}
@@ -1543,29 +1838,20 @@ function ActionPlanView({
         <div className="space-y-5">
           <Card className="bg-card/90">
             <CardHeader className="pb-3">
-              <CardTitle>Today’s Focus</CardTitle>
-              <CardDescription>Smallest practical starting point.</CardDescription>
+              <CardTitle>How to Read It</CardTitle>
+              <CardDescription>Plain-English scoring for managers.</CardDescription>
             </CardHeader>
-            <CardContent>
-              {findings[0] && (
-                <div className="space-y-3">
-                  <Badge variant="outline">{findings[0].fingerprint}</Badge>
-                  <p className="text-lg font-semibold">{findings[0].title}</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <MiniStat
-                      label="Savings"
-                      value={formatCurrency(findings[0].projectedSavings)}
-                    />
-                    <MiniStat label="Payback" value={`${findings[0].paybackDays}d`} />
-                  </div>
-                </div>
-              )}
+            <CardContent className="space-y-3">
+              <MethodNote title="Fix priority" text="Higher means better to start now." />
+              <MethodNote title="Confidence" text="How strong the detected signal is." />
+              <MethodNote title="Payback" text="Days until the fix pays for itself." />
+              <MethodNote title="Evidence" text="Source rows live inside each card." />
             </CardContent>
           </Card>
 
           <Card className="bg-card/90">
             <CardHeader className="pb-3">
-              <CardTitle>Boardroom Summary</CardTitle>
+              <CardTitle>Plan Summary</CardTitle>
               <CardDescription>One paragraph for leadership.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1574,19 +1860,233 @@ function ActionPlanView({
               </p>
             </CardContent>
           </Card>
-
-          <Card className="bg-card/90">
-            <CardHeader className="pb-3">
-              <CardTitle>How To Read It</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <MethodNote title="Owner" text="Who takes the first pass." />
-              <MethodNote title="Recipe" text="Trigger, action, escalation." />
-              <MethodNote title="Evidence" text="Source rows and thresholds." />
-            </CardContent>
-          </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SettingsView({
+  averageHourlyCost,
+  recoveryRate,
+  reportTitle,
+  companyName,
+  firebaseEnabled: isFirebaseEnabled,
+  authReady,
+  user,
+  cloudStatus,
+  cloudMessage,
+  savedReports,
+  hasData,
+  findingsCount,
+  onAverageHourlyCostChange,
+  onRecoveryRateChange,
+  onReportTitleChange,
+  onCompanyNameChange,
+  onSave,
+  onOpenImport,
+  onExportMarkdown,
+  onExportJson,
+  onExportCsv,
+}: {
+  averageHourlyCost: number;
+  recoveryRate: number;
+  reportTitle: string;
+  companyName: string;
+  firebaseEnabled: boolean;
+  authReady: boolean;
+  user: FirebaseUser | null;
+  cloudStatus: CloudStatus;
+  cloudMessage: string;
+  savedReports: SavedReportSummary[];
+  hasData: boolean;
+  findingsCount: number;
+  onAverageHourlyCostChange: (value: number) => void;
+  onRecoveryRateChange: (value: number) => void;
+  onReportTitleChange: (value: string) => void;
+  onCompanyNameChange: (value: string) => void;
+  onSave: () => void;
+  onOpenImport: () => void;
+  onExportMarkdown: () => void;
+  onExportJson: () => void;
+  onExportCsv: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <Card className="overflow-hidden border-primary/20 bg-card/90 shadow-soft">
+        <CardContent className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+          <div>
+            <Badge variant="secondary">Settings</Badge>
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal">
+              Workspace assumptions and report controls.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Tune the business model, name the report, export findings, and
+              explicitly save a snapshot to Firestore when you are ready.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <MiniStat label="Findings" value={`${findingsCount}`} />
+            <MiniStat label="Cloud" value={user ? "Signed in" : "Local"} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <Card className="bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle>Business Model</CardTitle>
+            <CardDescription>
+              These assumptions drive savings, payback, and exports.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <MoneyInput
+              value={averageHourlyCost}
+              onChange={onAverageHourlyCostChange}
+            />
+            <PercentInput value={recoveryRate} onChange={onRecoveryRateChange} />
+            <div className="md:col-span-2">
+              <Label htmlFor="settings-report-title">Report title</Label>
+              <Input
+                id="settings-report-title"
+                className="mt-1"
+                value={reportTitle}
+                onChange={(event) => onReportTitleChange(event.target.value)}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <Label htmlFor="settings-company-name">Company/workspace</Label>
+              <Input
+                id="settings-company-name"
+                className="mt-1"
+                value={companyName}
+                onChange={(event) => onCompanyNameChange(event.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/90">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Cloud Reports</CardTitle>
+                <CardDescription>Authenticated Firestore snapshots.</CardDescription>
+              </div>
+              <Badge variant={user ? "teal" : "outline"}>
+                {user ? "Ready" : "Sign in"}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border bg-secondary/55 p-4 text-sm leading-6">
+              <p className="font-semibold">What is saved?</p>
+              <p className="mt-1 text-muted-foreground">
+                Only after pressing Save: upload metadata, one analysis run,
+                findings, high-priority action plans, a report summary, and an
+                audit log. Raw CSV files are not uploaded.
+              </p>
+            </div>
+
+            {!isFirebaseEnabled && (
+              <p className="text-sm text-destructive">
+                Firebase env values are missing.
+              </p>
+            )}
+            {isFirebaseEnabled && !authReady && (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Connecting to Firebase...
+              </p>
+            )}
+            {cloudMessage && (
+              <p
+                className={cn(
+                  "text-sm",
+                  cloudStatus === "error" ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {cloudMessage}
+              </p>
+            )}
+
+            <Button
+              className="w-full"
+              onClick={onSave}
+              disabled={!user || !hasData || cloudStatus === "saving"}
+            >
+              {cloudStatus === "saving" ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Cloud className="h-4 w-4" aria-hidden="true" />
+              )}
+              Save report to Firestore
+            </Button>
+            {!hasData && (
+              <Button className="w-full" variant="outline" onClick={onOpenImport}>
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                Import data first
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <Card className="bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle>Exports</CardTitle>
+            <CardDescription>Download local report artifacts.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2 sm:grid-cols-3">
+            <Button variant="outline" onClick={onExportMarkdown} disabled={!findingsCount}>
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              Markdown
+            </Button>
+            <Button variant="outline" onClick={onExportJson} disabled={!findingsCount}>
+              <FileJson className="h-4 w-4" aria-hidden="true" />
+              JSON
+            </Button>
+            <Button variant="outline" onClick={onExportCsv} disabled={!findingsCount}>
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+              CSV
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/90">
+          <CardHeader className="pb-3">
+            <CardTitle>Saved Reports</CardTitle>
+            <CardDescription>Recent snapshots from this workspace.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {savedReports.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No cloud reports saved yet.
+              </p>
+            ) : (
+              <div className="grid gap-2 md:grid-cols-2">
+                {savedReports.slice(0, 6).map((report) => (
+                  <div
+                    key={report.id}
+                    className="rounded-lg border bg-muted/25 p-3 text-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-semibold">{report.title}</p>
+                      <Badge variant="outline">{report.workflowHealthScore}/100</Badge>
+                    </div>
+                    <p className="mt-2 text-muted-foreground">
+                      {formatCurrency(report.projectedSavings)} recoverable ·{" "}
+                      {formatShortDate(report.createdAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }
@@ -1632,7 +2132,7 @@ function TimelineItem({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <ScoreChip score={finding.fixThisFirstScore} />
-              <Badge variant="outline">Pattern: {finding.fingerprint}</Badge>
+              <Badge variant="outline">{finding.fingerprint}</Badge>
               <Badge variant="secondary">{finding.confidence}% confidence</Badge>
             </div>
             <h3 className="mt-3 text-lg font-semibold">{finding.title}</h3>
@@ -1647,23 +2147,9 @@ function TimelineItem({
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Affected:</span>
-          {finding.affectedRecords.slice(0, 4).map((recordId) => (
-            <span key={recordId} className="rounded-md border bg-card/80 px-2 py-1">
-              {recordId}
-            </span>
-          ))}
-          {finding.affectedRecords.length > 4 && (
-            <span className="rounded-md border bg-card/80 px-2 py-1">
-              +{finding.affectedRecords.length - 4}
-            </span>
-          )}
-        </div>
-
         <div className={cn("mt-4 rounded-md border p-3", accent.note)}>
           <p className="text-xs font-semibold uppercase text-muted-foreground">
-            Recommended fix
+            Next move
           </p>
           <p className="mt-1 text-sm leading-6">{finding.recommendation}</p>
         </div>
@@ -1672,13 +2158,13 @@ function TimelineItem({
 
         <div className="mt-4">
           <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-            First three steps
+            Next steps
           </p>
-          <ol className="grid gap-2">
+          <ol className="grid gap-2 lg:grid-cols-3">
             {finding.implementationSteps.slice(0, 3).map((step, stepIndex) => (
               <li
                 key={step}
-                className="flex gap-3 rounded-md border bg-card/70 p-3 text-sm"
+                className="flex gap-3 rounded-md border bg-card/75 p-3 text-sm"
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
                   {stepIndex + 1}
@@ -1689,49 +2175,21 @@ function TimelineItem({
           </ol>
         </div>
 
-        <div className="mt-4 rounded-md border bg-card/70 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
-                <Sparkles className="h-4 w-4" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold">AI plan</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onGenerateGeminiPlan(finding)}
-                disabled={geminiStatus === "loading"}
-              >
-                {geminiStatus === "loading" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Sparkles className="h-4 w-4" aria-hidden="true" />
-                )}
-                {geminiStatus === "ready" ? "Regenerate" : "Generate"}
-              </Button>
-            </div>
-          </div>
-          {geminiError && (
-            <p className="mt-3 text-sm leading-6 text-destructive">
-              {geminiError}
-            </p>
-          )}
-          {generatedPlan && (
-            <GeneratedPlanPanel
-              finding={finding}
-              plan={generatedPlan}
-              copiedId={copiedId}
-              onCopy={onCopy}
-            />
-          )}
-        </div>
-
         <details className={cn("mt-4 rounded-md border p-3 text-sm", accent.details)}>
-          <summary className="cursor-pointer font-medium">Recipe and evidence</summary>
+          <summary className="cursor-pointer font-medium">Recipe, evidence, and AI plan</summary>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Affected rows:</span>
+            {finding.affectedRecords.slice(0, 5).map((recordId) => (
+              <span key={recordId} className="rounded-md border bg-card/80 px-2 py-1">
+                {recordId}
+              </span>
+            ))}
+            {finding.affectedRecords.length > 5 && (
+              <span className="rounded-md border bg-card/80 px-2 py-1">
+                +{finding.affectedRecords.length - 5}
+              </span>
+            )}
+          </div>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <div className="rounded-md border bg-card/80 p-3">
               <p className="font-semibold">Automation recipe</p>
@@ -1746,6 +2204,37 @@ function TimelineItem({
           </div>
           <div className="mt-3">
             <ConfidenceDrivers finding={finding} />
+          </div>
+          <div className="mt-3 rounded-md border bg-card/80 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-semibold">Gemini-generated plan</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onGenerateGeminiPlan(finding)}
+                disabled={geminiStatus === "loading"}
+              >
+                {geminiStatus === "loading" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                )}
+                {geminiStatus === "ready" ? "Regenerate" : "Generate"}
+              </Button>
+            </div>
+            {geminiError && (
+              <p className="mt-3 text-sm leading-6 text-destructive">
+                {geminiError}
+              </p>
+            )}
+            {generatedPlan && (
+              <GeneratedPlanPanel
+                finding={finding}
+                plan={generatedPlan}
+                copiedId={copiedId}
+                onCopy={onCopy}
+              />
+            )}
           </div>
         </details>
 
@@ -1836,22 +2325,14 @@ function GeneratedPlanPanel({
 function ImportView({
   data,
   importErrors,
-  reportTitle,
-  companyName,
   isLoadingSamples,
-  onReportTitleChange,
-  onCompanyNameChange,
   onFileUpload,
   onLoadSamples,
   onTemplateDownload,
 }: {
   data: WorkflowData;
   importErrors: string[];
-  reportTitle: string;
-  companyName: string;
   isLoadingSamples: boolean;
-  onReportTitleChange: (value: string) => void;
-  onCompanyNameChange: (value: string) => void;
   onFileUpload: (type: DataType, file: File | null) => void;
   onLoadSamples: () => void;
   onTemplateDownload: (type: DataType) => void;
@@ -1882,24 +2363,9 @@ function ImportView({
         </Card>
 
         <div className="space-y-5">
-          <Card className="border-primary/20 bg-secondary/60">
-            <CardHeader className="pb-3">
-              <CardTitle>Privacy First</CardTitle>
-              <CardDescription>
-                CSVs are parsed locally in this prototype.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Nothing is uploaded to a backend. Imported rows live in browser
-                storage until you replace or clear them.
-              </p>
-            </CardContent>
-          </Card>
-
           <Card className="bg-card/90">
             <CardHeader className="pb-3">
-              <CardTitle>Demo Data</CardTitle>
+              <CardTitle>Sample Data</CardTitle>
               <CardDescription>60 balanced workflow rows.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -1918,31 +2384,6 @@ function ImportView({
             </CardContent>
           </Card>
 
-          <Card className="bg-card/90">
-            <CardHeader className="pb-3">
-              <CardTitle>Report Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <Label htmlFor="report-title">Report title</Label>
-                <Input
-                  id="report-title"
-                  className="mt-1"
-                  value={reportTitle}
-                  onChange={(event) => onReportTitleChange(event.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="company-name">Company/workspace</Label>
-                <Input
-                  id="company-name"
-                  className="mt-1"
-                  value={companyName}
-                  onChange={(event) => onCompanyNameChange(event.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </section>
 
@@ -2321,57 +2762,6 @@ function EmptyState({
           {description}
         </p>
         {action && <div className="mt-5">{action}</div>}
-      </div>
-    </div>
-  );
-}
-
-function GuidedDemoOverlay({
-  step,
-  onNext,
-  onClose,
-}: {
-  step: number;
-  onNext: () => void;
-  onClose: () => void;
-}) {
-  const current = demoSteps[step];
-  const isLast = step === demoSteps.length - 1;
-
-  return (
-    <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-lg border bg-card p-4 shadow-soft page-transition">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <Badge variant="secondary">90-second demo</Badge>
-          <h3 className="mt-2 font-semibold">{current.title}</h3>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Close guided demo"
-        >
-          Close
-        </button>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {current.text}
-      </p>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <div className="flex gap-1">
-          {demoSteps.map((item, index) => (
-            <span
-              key={item.title}
-              className={cn(
-                "h-2 w-7 rounded-full transition-colors",
-                index <= step ? "bg-primary" : "bg-muted",
-              )}
-            />
-          ))}
-        </div>
-        <Button size="sm" onClick={onNext}>
-          {isLast ? "Finish" : "Next"}
-        </Button>
       </div>
     </div>
   );
@@ -2938,6 +3328,19 @@ function formatBoardroomSummary(findings: LeakFinding[], dataQuality: DataQualit
 
 function formatFte(value: number) {
   return `${value.toFixed(value >= 1 ? 1 : 2)} FTE`;
+}
+
+function formatShortDate(value?: Date) {
+  if (!value) return "just now";
+  return value.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return "Something went wrong.";
 }
 
 function getLeakSeverityLabel(score: number) {
