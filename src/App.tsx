@@ -1645,7 +1645,7 @@ function TimelineItem({
         <div className="mt-4 rounded-md border bg-card/70 p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-semibold">Gemini action plan</p>
+              <p className="font-semibold">AI-powered action plan</p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Optional server-generated plan. Templates remain available.
               </p>
