@@ -14,6 +14,9 @@ import {
   GitPullRequest,
   ListChecks,
   Loader2,
+  Moon,
+  Play,
+  Sun,
   Target,
   Upload,
   Workflow,
@@ -70,43 +73,51 @@ import type {
   WorkflowData,
 } from "./types";
 
-type View = "dashboard" | "import" | "data" | "actions";
+type View = "dashboard" | "actions" | "import" | "data";
+type Theme = "light" | "dark";
 
-const storageKey = "workleak-demo-state-v3";
-
-const demoSteps: { view: View; title: string; text: string }[] = [
-  {
-    view: "dashboard",
-    title: "1. Executive snapshot",
-    text: "Start with scanned records, healthy work ignored, adjusted waste, and the best first fix.",
-  },
-  {
-    view: "dashboard",
-    title: "2. Fix This First",
-    text: "Show that WorkLeak ranks by savings, confidence, effort, and payback, not just cost.",
-  },
-  {
-    view: "dashboard",
-    title: "3. Leak Fingerprints",
-    text: "Point out memorable patterns like Approval Black Hole and PR Waiting Room.",
-  },
-  {
-    view: "actions",
-    title: "4. Monday Morning Plan",
-    text: "Move from insight to execution with owners, savings, effort, and recipes.",
-  },
-  {
-    view: "actions",
-    title: "5. Copy and export",
-    text: "Copy Jira text or export Markdown, JSON, and CSV for the team.",
-  },
-];
+const storageKey = "workleak-demo-state-v4";
 
 const emptyData: WorkflowData = {
   tickets: [],
   meetings: [],
   pullRequests: [],
 };
+
+const tabs: { id: View; label: string; icon: typeof BarChart3 }[] = [
+  { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { id: "actions", label: "Action Plan", icon: Bot },
+  { id: "import", label: "Import", icon: Upload },
+  { id: "data", label: "Raw Data", icon: Database },
+];
+
+const demoSteps: { view: View; title: string; text: string }[] = [
+  {
+    view: "dashboard",
+    title: "Executive Snapshot",
+    text: "Lead with adjusted waste, healthy work ignored, and the best first fix.",
+  },
+  {
+    view: "dashboard",
+    title: "Fix This First",
+    text: "Show the ROI ranking: savings, confidence, effort, and payback.",
+  },
+  {
+    view: "dashboard",
+    title: "Leak Fingerprints",
+    text: "Name the pattern so the team remembers what to fix.",
+  },
+  {
+    view: "actions",
+    title: "Monday Plan",
+    text: "Turn the top leaks into owners, next steps, recipes, and Jira text.",
+  },
+  {
+    view: "actions",
+    title: "Export",
+    text: "Copy the plan or export Markdown, JSON, and CSV.",
+  },
+];
 
 const dataTypeMeta: Record<
   DataType,
@@ -125,7 +136,7 @@ const dataTypeMeta: Record<
     samplePath: "/samples/tickets.csv",
     templateName: "workleak-ticket-template.csv",
     icon: ListChecks,
-    accent: "bg-[#22577a]",
+    accent: "bg-sky-600",
   },
   meetings: {
     label: "Meetings",
@@ -133,7 +144,7 @@ const dataTypeMeta: Record<
     samplePath: "/samples/meetings.csv",
     templateName: "workleak-meeting-template.csv",
     icon: CalendarClock,
-    accent: "bg-[#38a3a5]",
+    accent: "bg-teal-600",
   },
   pullRequests: {
     label: "Pull Requests",
@@ -141,7 +152,7 @@ const dataTypeMeta: Record<
     samplePath: "/samples/pull_requests.csv",
     templateName: "workleak-pr-template.csv",
     icon: GitPullRequest,
-    accent: "bg-[#f07167]",
+    accent: "bg-rose-500",
   },
 };
 
@@ -165,13 +176,6 @@ const fingerprintColor: Record<LeakFingerprint, string> = {
   "Blocked Work Queue": "#c44536",
 };
 
-const tabs: { id: View; label: string; icon: typeof BarChart3 }[] = [
-  { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-  { id: "actions", label: "Action Plan", icon: Bot },
-  { id: "import", label: "Import", icon: Upload },
-  { id: "data", label: "Raw Data", icon: Database },
-];
-
 const exportDefaults = {
   reportTitle: "WorkLeak Action Plan",
   companyName: "Demo Company",
@@ -179,6 +183,7 @@ const exportDefaults = {
 
 function App() {
   const [view, setView] = useState<View>("dashboard");
+  const [theme, setTheme] = useState<Theme>("light");
   const [averageHourlyCost, setAverageHourlyCost] = useState(95);
   const [recoveryRate, setRecoveryRate] = useState(0.62);
   const [reportTitle, setReportTitle] = useState(exportDefaults.reportTitle);
@@ -200,18 +205,22 @@ function App() {
         recoveryRate?: number;
         reportTitle?: string;
         companyName?: string;
+        theme?: Theme;
       };
+
       if (parsed.data) setData(parsed.data);
       if (parsed.averageHourlyCost) setAverageHourlyCost(parsed.averageHourlyCost);
       if (parsed.recoveryRate) setRecoveryRate(parsed.recoveryRate);
       if (parsed.reportTitle) setReportTitle(parsed.reportTitle);
       if (parsed.companyName) setCompanyName(parsed.companyName);
+      if (parsed.theme) setTheme(parsed.theme);
     } catch {
       localStorage.removeItem(storageKey);
     }
   }, []);
 
   useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem(
       storageKey,
       JSON.stringify({
@@ -220,9 +229,10 @@ function App() {
         recoveryRate,
         reportTitle,
         companyName,
+        theme,
       }),
     );
-  }, [data, averageHourlyCost, recoveryRate, reportTitle, companyName]);
+  }, [data, averageHourlyCost, recoveryRate, reportTitle, companyName, theme]);
 
   const findings = useMemo(
     () => detectLeaks(data, averageHourlyCost, recoveryRate),
@@ -230,6 +240,8 @@ function App() {
   );
 
   const totals = useMemo(() => getTotals(data, findings), [data, findings]);
+  const dataQuality = useMemo(() => getDataQuality(data), [data]);
+  const hasData = totals.importedRows > 0;
 
   const categoryChart = useMemo(() => {
     const totalsByCategory = findings.reduce<Record<string, number>>(
@@ -248,6 +260,11 @@ function App() {
       fill: categoryColor[category as LeakCategory],
     }));
   }, [findings]);
+
+  const fingerprintSummaries = useMemo(
+    () => buildFingerprintSummaries(findings),
+    [findings],
+  );
 
   const sourceBreakdown = useMemo(
     () =>
@@ -269,12 +286,6 @@ function App() {
       }),
     [data, findings, totals.adjustedMonthlyCost],
   );
-
-  const fingerprintSummaries = useMemo(
-    () => buildFingerprintSummaries(findings),
-    [findings],
-  );
-  const dataQuality = useMemo(() => getDataQuality(data), [data]);
 
   async function loadSampleData() {
     setIsLoadingSamples(true);
@@ -338,18 +349,26 @@ function App() {
   }
 
   function handleExportMarkdown() {
-    const markdown = buildMarkdownActionPlan(findings, data, exportOptions());
-    downloadMarkdown("workleak-action-plan.md", markdown);
+    downloadMarkdown(
+      "workleak-action-plan.md",
+      buildMarkdownActionPlan(findings, data, exportOptions()),
+    );
   }
 
   function handleExportJson() {
-    const json = buildJsonExport(findings, data, exportOptions());
-    downloadText("workleak-findings.json", json, "application/json;charset=utf-8");
+    downloadText(
+      "workleak-findings.json",
+      buildJsonExport(findings, data, exportOptions()),
+      "application/json;charset=utf-8",
+    );
   }
 
   function handleExportCsv() {
-    const csv = buildFindingsCsv(findings);
-    downloadText("workleak-findings.csv", csv, "text/csv;charset=utf-8");
+    downloadText(
+      "workleak-findings.csv",
+      buildFindingsCsv(findings),
+      "text/csv;charset=utf-8",
+    );
   }
 
   function handleTemplateDownload(type: DataType) {
@@ -381,14 +400,14 @@ function App() {
     setView(demoSteps[nextStep].view);
   }
 
-  const hasData = totals.importedRows > 0;
-
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#f5fbf7_0%,#edf6f1_46%,#f8faf8_100%)]">
-      <header className="border-b bg-white/90 backdrop-blur">
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,hsl(var(--secondary))_0,transparent_30%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted))_100%)] dark:bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.16)_0,transparent_32%),linear-gradient(180deg,hsl(var(--background))_0%,hsl(205_28%_8%)_100%)]" />
+
+      <header className="sticky top-0 z-40 border-b bg-background/86 backdrop-blur-xl">
         <div className="container flex flex-col gap-4 py-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-1.5 shadow-sm ring-1 ring-black/5">
               <img
                 src="/logo.png"
                 alt="WorkLeak"
@@ -405,15 +424,26 @@ function App() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[180px_170px_145px_150px_auto] xl:items-end">
-            <MoneyInput
-              value={averageHourlyCost}
-              onChange={setAverageHourlyCost}
-            />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[160px_145px_48px_150px_auto] xl:items-end">
+            <MoneyInput value={averageHourlyCost} onChange={setAverageHourlyCost} />
             <PercentInput value={recoveryRate} onChange={setRecoveryRate} />
-            <Button variant="outline" onClick={startGuidedDemo}>
-              <Target className="h-4 w-4" aria-hidden="true" />
-              Demo
+            <ThemeToggle
+              theme={theme}
+              onToggle={() =>
+                setTheme((current) => (current === "dark" ? "light" : "dark"))
+              }
+            />
+            <Button
+              variant="secondary"
+              onClick={startGuidedDemo}
+              disabled={isLoadingSamples}
+            >
+              {isLoadingSamples ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Play className="h-4 w-4" aria-hidden="true" />
+              )}
+              Start Demo
             </Button>
             <Button onClick={handleExportMarkdown} disabled={!findings.length}>
               <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
@@ -424,7 +454,7 @@ function App() {
       </header>
 
       <div className="container py-5">
-        <nav className="mb-5 flex gap-2 overflow-x-auto">
+        <nav className="mb-5 flex gap-2 overflow-x-auto rounded-lg border bg-card/75 p-1 shadow-sm backdrop-blur">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -433,10 +463,10 @@ function App() {
                 type="button"
                 onClick={() => setView(tab.id)}
                 className={cn(
-                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors",
+                  "inline-flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-medium transition-all",
                   view === tab.id
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-white text-foreground hover:bg-muted",
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -468,12 +498,12 @@ function App() {
             <ActionPlanView
               findings={findings}
               hasData={hasData}
+              dataQuality={dataQuality}
               isLoadingSamples={isLoadingSamples}
               onLoadSamples={loadSampleData}
               onExportMarkdown={handleExportMarkdown}
               onExportJson={handleExportJson}
               onExportCsv={handleExportCsv}
-              dataQuality={dataQuality}
             />
           )}
 
@@ -500,6 +530,7 @@ function App() {
             />
           )}
         </div>
+
         {demoStep !== null && (
           <GuidedDemoOverlay
             step={demoStep}
@@ -522,7 +553,7 @@ function MoneyInput({
   return (
     <div>
       <Label htmlFor="hourly-cost">Hourly cost</Label>
-      <div className="mt-1 flex items-center rounded-md border bg-white px-3 focus-within:ring-2 focus-within:ring-ring">
+      <div className="mt-1 flex items-center rounded-md border bg-card px-3 focus-within:ring-2 focus-within:ring-ring">
         <span className="text-sm text-muted-foreground">$</span>
         <Input
           id="hourly-cost"
@@ -530,7 +561,7 @@ function MoneyInput({
           min={1}
           value={value}
           onChange={(event) => onChange(Number(event.target.value) || 1)}
-          className="border-0 px-2 shadow-none focus-visible:ring-0"
+          className="border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
         />
       </div>
     </div>
@@ -547,7 +578,7 @@ function PercentInput({
   return (
     <div>
       <Label htmlFor="recovery-rate">Recovery</Label>
-      <div className="mt-1 flex items-center rounded-md border bg-white px-3 focus-within:ring-2 focus-within:ring-ring">
+      <div className="mt-1 flex items-center rounded-md border bg-card px-3 focus-within:ring-2 focus-within:ring-ring">
         <Input
           id="recovery-rate"
           type="number"
@@ -557,10 +588,33 @@ function PercentInput({
           onChange={(event) =>
             onChange(Math.min(1, Math.max(0.01, Number(event.target.value) / 100)))
           }
-          className="border-0 px-0 shadow-none focus-visible:ring-0"
+          className="border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
         />
         <span className="text-sm text-muted-foreground">%</span>
       </div>
+    </div>
+  );
+}
+
+function ThemeToggle({
+  theme,
+  onToggle,
+}: {
+  theme: Theme;
+  onToggle: () => void;
+}) {
+  const Icon = theme === "dark" ? Sun : Moon;
+
+  return (
+    <div className="self-end">
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={onToggle}
+        aria-label="Toggle dark mode"
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </Button>
     </div>
   );
 }
@@ -602,8 +656,8 @@ function DashboardView({
     return (
       <EmptyState
         icon={<Workflow className="h-7 w-7 text-primary" aria-hidden="true" />}
-        title="A calmer way to see where work leaks time."
-        description="Load the demo data or upload CSVs to get adjusted waste, fix-first priorities, and a practical action plan."
+        title="See where work leaks time."
+        description="Load demo data or upload CSVs to get adjusted waste, fix-first priorities, and an action plan."
         action={
           <div className="flex flex-col justify-center gap-3 sm:flex-row">
             <Button onClick={onLoadSamples} disabled={isLoadingSamples}>
@@ -625,32 +679,29 @@ function DashboardView({
   }
 
   const topFinding = findings[0];
-  const afterFixes = totals.adjustedMonthlyCost - totals.projectedSavings;
+  const afterFixes = Math.max(0, totals.adjustedMonthlyCost - totals.projectedSavings);
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card className="overflow-hidden border-primary/20 bg-white">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="overflow-hidden border-primary/20 bg-card/90 shadow-soft backdrop-blur">
           <CardContent className="p-5 lg:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="mb-3 flex flex-wrap gap-2">
                   <Badge variant="secondary">Executive Snapshot</Badge>
+                  <Badge variant="outline">{totals.importedRows} scanned</Badge>
                   <Badge variant="outline">
-                    {totals.importedRows} scanned
-                  </Badge>
-                  <Badge variant="outline">
-                    {totals.healthyWorkflowCount} healthy ignored
+                    {totals.healthyWorkflowCount} ignored
                   </Badge>
                 </div>
                 <h2 className="max-w-3xl text-2xl font-semibold tracking-normal lg:text-3xl">
-                  Flagged {totals.findingsCount} high-value leaks. Best first
-                  fix: {topFinding?.fingerprint ?? "load data"}.
+                  {formatCurrency(totals.adjustedMonthlyCost)} adjusted waste.
                 </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  WorkLeak uses deterministic workflow rules and generated
-                  recommendation templates. Adjusted waste keeps overlapping
-                  signals from inflating the story.
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  Best first fix: {topFinding?.fingerprint ?? "load data"}.
+                  Recover {formatCurrency(totals.projectedSavings)} with the
+                  first improvement cycle.
                 </p>
               </div>
               <Button onClick={onOpenActions}>
@@ -660,62 +711,15 @@ function DashboardView({
             </div>
 
             <div className="mt-6 grid gap-3 md:grid-cols-4">
-              <MetricTile
-                label="Adjusted waste"
-                value={formatCurrency(totals.adjustedMonthlyCost)}
-              />
-              <MetricTile
-                label="Recoverable"
-                value={formatCurrency(totals.projectedSavings)}
-              />
-              <MetricTile
-                label="After fixes"
-                value={formatCurrency(afterFixes)}
-              />
-              <MetricTile
-                label="WorkLeak score"
-                value={`${totals.workLeakScore}/100`}
-              />
+              <MetricTile label="Adjusted" value={formatCurrency(totals.adjustedMonthlyCost)} />
+              <MetricTile label="Recoverable" value={formatCurrency(totals.projectedSavings)} />
+              <MetricTile label="After fixes" value={formatCurrency(afterFixes)} />
+              <MetricTile label="Score" value={`${totals.workLeakScore}/100`} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-[#17202a] text-white">
-          <CardContent className="p-5">
-            <p className="text-sm text-white/65">Fix this first</p>
-            {topFinding ? (
-              <>
-                <h3 className="mt-2 text-xl font-semibold">
-                  {topFinding.title}
-                </h3>
-                <p className="mt-2 text-sm text-white/72">
-                  {topFinding.fingerprint} · {topFinding.confidence}% confidence
-                </p>
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <DarkStat
-                    label="Savings"
-                    value={formatCurrency(topFinding.projectedSavings)}
-                  />
-                  <DarkStat
-                    label="Payback"
-                    value={`${topFinding.paybackDays}d`}
-                  />
-                  <DarkStat
-                    label="Effort"
-                    value={`${topFinding.implementationDays}d`}
-                  />
-                  <DarkStat
-                    label="Score"
-                    value={`${topFinding.fixThisFirstScore}/100`}
-                  />
-                </div>
-                <p className="mt-5 text-sm leading-6 text-white/82">
-                  {topFinding.recommendation}
-                </p>
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
+        <FocusCard finding={topFinding} />
       </section>
 
       <BoardroomSummaryCard
@@ -724,13 +728,11 @@ function DashboardView({
         dataQuality={dataQuality}
       />
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <Card>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
+        <Card className="bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle>Fix This First</CardTitle>
-            <CardDescription>
-              Practical ranking by savings, confidence, effort, and payback.
-            </CardDescription>
+            <CardDescription>Savings, confidence, effort, payback.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -741,12 +743,10 @@ function DashboardView({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle>Source Health</CardTitle>
-            <CardDescription>
-              Scanned rows, ignored normal work, and adjusted cost by source.
-            </CardDescription>
+            <CardDescription>What was scanned and what stayed quiet.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
@@ -765,10 +765,10 @@ function DashboardView({
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <Card>
+        <Card className="bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle>Leak Fingerprints</CardTitle>
-            <CardDescription>Named patterns the team can remember.</CardDescription>
+            <CardDescription>Memorable patterns, not raw alerts.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -779,12 +779,10 @@ function DashboardView({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle>Adjusted Cost by Category</CardTitle>
-            <CardDescription>
-              A quick read of where the money is leaking.
-            </CardDescription>
+            <CardDescription>Where the money is leaking.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mx-auto h-72 w-full max-w-[680px]">
@@ -809,7 +807,15 @@ function DashboardView({
                     tickLine={false}
                     tick={{ fontSize: 12 }}
                   />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip
+                    cursor={{ fill: "hsl(var(--muted))" }}
+                    contentStyle={{
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: 8,
+                    }}
+                    formatter={(value) => formatCurrency(Number(value))}
+                  />
                   <Bar dataKey="cost" radius={[0, 6, 6, 0]}>
                     {categoryChart.map((entry) => (
                       <Cell key={entry.category} fill={entry.fill} />
@@ -828,29 +834,15 @@ function DashboardView({
         </Card>
       </section>
 
-      <Card>
+      <Card className="bg-card/80">
         <CardContent className="grid gap-4 p-5 lg:grid-cols-3 xl:grid-cols-5">
-          <MethodNote
-            title="Adjusted waste"
-            text="Deduplicates overlapping signals from the same workflow item."
-          />
-          <MethodNote
-            title="WorkLeak score"
-            text="Combines adjusted lost hours, flagged leak density, and severe fingerprints."
-          />
-          <MethodNote
-            title="Fix-first score"
-            text="Projected savings and confidence, normalized by effort."
-          />
-          <MethodNote
-            title="Confidence"
-            text="Based on signal strength, source completeness, and how far work exceeded thresholds."
-          />
+          <MethodNote title="Adjusted waste" text="Deduplicates overlapping signals." />
+          <MethodNote title="Score" text="Lost hours, leak density, severity." />
+          <MethodNote title="Fix-first" text="Savings and confidence against effort." />
+          <MethodNote title="Confidence" text="Signal strength and completeness." />
           <MethodNote
             title="Recovery"
-            text={`${Math.round(
-              recoveryRate * 100,
-            )}% assumed recoverable in the first improvement cycle.`}
+            text={`${Math.round(recoveryRate * 100)}% first-cycle assumption.`}
           />
         </CardContent>
       </Card>
@@ -858,9 +850,37 @@ function DashboardView({
   );
 }
 
+function FocusCard({ finding }: { finding?: LeakFinding }) {
+  return (
+    <Card className="overflow-hidden border-primary/25 bg-primary text-primary-foreground shadow-soft">
+      <CardContent className="p-5">
+        <p className="text-sm text-primary-foreground/70">Fix this first</p>
+        {finding ? (
+          <>
+            <h3 className="mt-2 text-xl font-semibold">{finding.title}</h3>
+            <p className="mt-2 text-sm text-primary-foreground/75">
+              {finding.fingerprint} · {finding.confidence}% confidence
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <DarkStat label="Savings" value={formatCurrency(finding.projectedSavings)} />
+              <DarkStat label="Payback" value={`${finding.paybackDays}d`} />
+              <DarkStat label="Effort" value={`${finding.implementationDays}d`} />
+              <DarkStat label="Score" value={`${finding.fixThisFirstScore}/100`} />
+            </div>
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-primary-foreground/75">
+            Load data to see the first move.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function MetricTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-[#f9fbf8] p-4">
+    <div className="rounded-lg border bg-muted/45 p-4 transition-transform duration-200 hover:-translate-y-0.5">
       <p className="text-xs font-medium uppercase text-muted-foreground">
         {label}
       </p>
@@ -873,79 +893,9 @@ function MetricTile({ label, value }: { label: string; value: string }) {
 
 function DarkStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-white/15 bg-white/8 p-3">
-      <p className="text-xs text-white/60">{label}</p>
+    <div className="rounded-lg border border-primary-foreground/15 bg-primary-foreground/10 p-3">
+      <p className="text-xs text-primary-foreground/65">{label}</p>
       <p className="mt-1 font-semibold tabular">{value}</p>
-    </div>
-  );
-}
-
-function BoardroomSummaryCard({
-  totals,
-  findings,
-  dataQuality,
-}: {
-  totals: ReturnType<typeof getTotals>;
-  findings: LeakFinding[];
-  dataQuality: DataQuality;
-}) {
-  const topFinding = findings[0];
-
-  return (
-    <Card className="border-[#d7e7df] bg-[linear-gradient(135deg,#ffffff_0%,#f4fbf8_100%)]">
-      <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
-        <div>
-          <div className="mb-2 flex flex-wrap gap-2">
-            <Badge variant="secondary">Boardroom Summary</Badge>
-            <Badge variant="outline">Data quality: {dataQuality.status}</Badge>
-          </div>
-          <p className="text-lg leading-8">
-            WorkLeak scanned {totals.importedRows} records and identified{" "}
-            {totals.findingsCount} high-value leaks. Adjusted monthly waste is{" "}
-            {formatCurrency(totals.adjustedMonthlyCost)}, with{" "}
-            {formatCurrency(totals.projectedSavings)} recoverable in the first
-            improvement cycle.
-          </p>
-          {topFinding && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Highest-ROI fix: {topFinding.fingerprint} in {topFinding.team}.
-            </p>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <MiniStat label="Score means" value="drag level" />
-          <MiniStat label="Fields present" value={`${dataQuality.requiredFieldRate}%`} />
-          <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
-          <MiniStat label="Healthy ignored" value={`${totals.healthyWorkflowCount}`} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DataQualityPanel({ dataQuality }: { dataQuality: DataQuality }) {
-  return (
-    <div className="rounded-lg border bg-[#fff9ec] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-semibold">Data Quality</p>
-        <Badge variant={dataQuality.status === "Good" ? "teal" : "amber"}>
-          {dataQuality.status}
-        </Badge>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <MiniStat
-          label="Required fields"
-          value={`${dataQuality.requiredFieldRate}%`}
-        />
-        <MiniStat
-          label="Meeting gaps"
-          value={`${dataQuality.meetingOutcomeGaps}`}
-        />
-      </div>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        Confidence is adjusted by signal strength, source completeness, and how
-        far each workflow exceeded its threshold.
-      </p>
     </div>
   );
 }
@@ -958,9 +908,9 @@ function CompactFinding({
   rank: number;
 }) {
   return (
-    <details className="group rounded-lg border bg-white p-3 transition-colors open:bg-[#fbfdfb]">
+    <details className="group rounded-lg border bg-muted/25 p-3 transition-all open:bg-muted/40">
       <summary className="grid cursor-pointer list-none gap-3 md:grid-cols-[38px_minmax(0,1fr)_auto] md:items-center">
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-sm font-semibold">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
           {rank}
         </span>
         <span className="min-w-0">
@@ -982,15 +932,9 @@ function CompactFinding({
         </span>
       </summary>
       <div className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-4">
-        <MiniStat
-          label="Adjusted waste"
-          value={formatCurrency(finding.adjustedMonthlyCost)}
-        />
+        <MiniStat label="Adjusted" value={formatCurrency(finding.adjustedMonthlyCost)} />
         <MiniStat label="Payback" value={`${finding.paybackDays}d`} />
-        <MiniStat
-          label="Effort"
-          value={`${finding.implementationEffort}, ${finding.implementationDays}d`}
-        />
+        <MiniStat label="Effort" value={`${finding.implementationDays}d`} />
         <MiniStat label="Priority" value={finding.priority} />
       </div>
     </details>
@@ -1017,7 +961,7 @@ function SourceRow({
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-primary"
+          className="h-full rounded-full bg-primary transition-all duration-500"
           style={{ width: `${source.percent}%` }}
         />
       </div>
@@ -1025,9 +969,67 @@ function SourceRow({
   );
 }
 
+function BoardroomSummaryCard({
+  totals,
+  findings,
+  dataQuality,
+}: {
+  totals: ReturnType<typeof getTotals>;
+  findings: LeakFinding[];
+  dataQuality: DataQuality;
+}) {
+  const topFinding = findings[0];
+
+  return (
+    <Card className="bg-card/85">
+      <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+        <div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <Badge variant="secondary">Boardroom Summary</Badge>
+            <Badge variant="outline">Data quality: {dataQuality.status}</Badge>
+          </div>
+          <p className="text-lg leading-8">
+            Scanned {totals.importedRows} records. Adjusted waste is{" "}
+            {formatCurrency(totals.adjustedMonthlyCost)} with{" "}
+            {formatCurrency(totals.projectedSavings)} recoverable.
+          </p>
+          {topFinding && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Highest-ROI fix: {topFinding.fingerprint} in {topFinding.team}.
+            </p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <MiniStat label="Score" value={`${totals.workLeakScore}/100`} />
+          <MiniStat label="Fields" value={`${dataQuality.requiredFieldRate}%`} />
+          <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
+          <MiniStat label="Ignored" value={`${totals.healthyWorkflowCount}`} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataQualityPanel({ dataQuality }: { dataQuality: DataQuality }) {
+  return (
+    <div className="rounded-lg border bg-muted/35 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-semibold">Data Quality</p>
+        <Badge variant={dataQuality.status === "Good" ? "teal" : "amber"}>
+          {dataQuality.status}
+        </Badge>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <MiniStat label="Fields" value={`${dataQuality.requiredFieldRate}%`} />
+        <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
+      </div>
+    </div>
+  );
+}
+
 function FingerprintCard({ summary }: { summary: FingerprintSummary }) {
   return (
-    <div className="rounded-lg border bg-white p-4">
+    <div className="rounded-lg border bg-muted/25 p-4 transition-transform duration-200 hover:-translate-y-0.5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-semibold">{summary.fingerprint}</p>
@@ -1063,7 +1065,7 @@ function MethodNote({ title, text }: { title: string; text: string }) {
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border bg-white px-3 py-2">
+    <div className="rounded-md border bg-card/80 px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 font-semibold tabular">{value}</p>
     </div>
@@ -1073,21 +1075,21 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 function ActionPlanView({
   findings,
   hasData,
+  dataQuality,
   isLoadingSamples,
   onLoadSamples,
   onExportMarkdown,
   onExportJson,
   onExportCsv,
-  dataQuality,
 }: {
   findings: LeakFinding[];
   hasData: boolean;
+  dataQuality: DataQuality;
   isLoadingSamples: boolean;
   onLoadSamples: () => void;
   onExportMarkdown: () => void;
   onExportJson: () => void;
   onExportCsv: () => void;
-  dataQuality: DataQuality;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -1102,7 +1104,7 @@ function ActionPlanView({
       <EmptyState
         icon={<Bot className="h-7 w-7 text-primary" aria-hidden="true" />}
         title="No action plan yet."
-        description="Load sample data to create a short, copyable plan for the highest-return fixes."
+        description="Load sample data to create a short, copyable plan."
         action={
           <Button onClick={onLoadSamples} disabled={isLoadingSamples}>
             {isLoadingSamples ? (
@@ -1119,7 +1121,7 @@ function ActionPlanView({
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-[#f2c14e]/35 bg-[linear-gradient(135deg,#fff9ec_0%,#f6fbf6_54%,#eef8f8_100%)]">
+      <Card className="overflow-hidden bg-card/90">
         <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <Badge variant="secondary">Monday Morning Plan</Badge>
@@ -1127,7 +1129,7 @@ function ActionPlanView({
               Three fixes to start with.
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              A quiet timeline for owners, savings, effort, and next action.
+              Owners, effort, payback, and one-click handoff.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1153,9 +1155,9 @@ function ActionPlanView({
       </Card>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <Card className="border-[#d7e7df] bg-[#fbfdfb]">
+        <Card className="bg-card/90">
           <CardContent className="p-5">
-            <div className="relative space-y-4 before:absolute before:left-[19px] before:top-3 before:h-[calc(100%-24px)] before:w-px before:bg-[#b9d8cd]">
+            <div className="relative space-y-4 before:absolute before:left-[19px] before:top-3 before:h-[calc(100%-24px)] before:w-px before:bg-border">
               {findings.slice(0, 6).map((finding, index) => (
                 <TimelineItem
                   key={finding.id}
@@ -1170,7 +1172,7 @@ function ActionPlanView({
         </Card>
 
         <div className="space-y-5">
-          <Card className="border-[#f2c14e]/35 bg-[#fff9ec]">
+          <Card className="bg-card/90">
             <CardHeader className="pb-3">
               <CardTitle>Today’s Focus</CardTitle>
               <CardDescription>Smallest practical starting point.</CardDescription>
@@ -1180,25 +1182,19 @@ function ActionPlanView({
                 <div className="space-y-3">
                   <Badge variant="outline">{findings[0].fingerprint}</Badge>
                   <p className="text-lg font-semibold">{findings[0].title}</p>
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    {findings[0].recommendation}
-                  </p>
                   <div className="grid grid-cols-2 gap-2">
                     <MiniStat
                       label="Savings"
                       value={formatCurrency(findings[0].projectedSavings)}
                     />
-                    <MiniStat
-                      label="Payback"
-                      value={`${findings[0].paybackDays}d`}
-                    />
+                    <MiniStat label="Payback" value={`${findings[0].paybackDays}d`} />
                   </div>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-[#d7e7df] bg-[#f4fbf8]">
+          <Card className="bg-card/90">
             <CardHeader className="pb-3">
               <CardTitle>Boardroom Summary</CardTitle>
               <CardDescription>One paragraph for leadership.</CardDescription>
@@ -1210,15 +1206,14 @@ function ActionPlanView({
             </CardContent>
           </Card>
 
-          <Card className="border-[#d7e7df] bg-white">
+          <Card className="bg-card/90">
             <CardHeader className="pb-3">
-              <CardTitle>Plan Shape</CardTitle>
-              <CardDescription>How to read each action.</CardDescription>
+              <CardTitle>How To Read It</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <MethodNote title="Owner" text="Who should take the first pass." />
-              <MethodNote title="Recipe" text="Trigger, action, and escalation." />
-              <MethodNote title="Evidence" text="Only the data needed to trust it." />
+              <MethodNote title="Owner" text="Who takes the first pass." />
+              <MethodNote title="Recipe" text="Trigger, action, escalation." />
+              <MethodNote title="Evidence" text="Source rows and thresholds." />
             </CardContent>
           </Card>
         </div>
@@ -1243,22 +1238,18 @@ function TimelineItem({
   return (
     <article className="relative pl-12">
       <div
-        className="absolute left-0 top-1 flex h-10 w-10 items-center justify-center rounded-md border text-sm font-semibold shadow-sm transition-transform duration-200 hover:scale-105"
-        style={{
-          backgroundColor: accent.marker,
-          borderColor: accent.border,
-          color: accent.markerText,
-          boxShadow: `0 10px 26px ${accent.shadow}`,
-        }}
+        className={cn(
+          "absolute left-0 top-1 flex h-10 w-10 items-center justify-center rounded-md border text-sm font-semibold shadow-sm transition-transform duration-200 hover:scale-105",
+          accent.marker,
+        )}
       >
         {index + 1}
       </div>
       <div
-        className="rounded-lg border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft"
-        style={{
-          background: accent.card,
-          borderColor: accent.border,
-        }}
+        className={cn(
+          "rounded-lg border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-soft",
+          accent.card,
+        )}
       >
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -1267,7 +1258,7 @@ function TimelineItem({
                 {finding.fixThisFirstScore}/100
               </Badge>
               <Badge variant="outline">{finding.fingerprint}</Badge>
-              <Badge variant="secondary">{finding.confidence}% confidence</Badge>
+              <Badge variant="secondary">{finding.confidence}%</Badge>
             </div>
             <h3 className="mt-3 text-lg font-semibold">{finding.title}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -1275,39 +1266,22 @@ function TimelineItem({
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-left lg:w-[360px]">
-            <MiniStat
-              label="Savings"
-              value={formatCurrency(finding.projectedSavings)}
-            />
+            <MiniStat label="Savings" value={formatCurrency(finding.projectedSavings)} />
             <MiniStat label="Effort" value={`${finding.implementationDays}d`} />
             <MiniStat label="Payback" value={`${finding.paybackDays}d`} />
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Affected records:</span>
-          {finding.affectedRecords.slice(0, 6).map((recordId) => (
-            <span
-              key={recordId}
-              className="rounded-md border bg-white/70 px-2 py-1 font-medium text-foreground"
-            >
+          <span className="font-medium text-foreground">Affected:</span>
+          {finding.affectedRecords.slice(0, 5).map((recordId) => (
+            <span key={recordId} className="rounded-md border bg-card/80 px-2 py-1">
               {recordId}
             </span>
           ))}
-          {finding.affectedRecords.length > 6 && (
-            <span className="rounded-md border bg-white/70 px-2 py-1 font-medium text-foreground">
-              +{finding.affectedRecords.length - 6}
-            </span>
-          )}
         </div>
 
-        <div
-          className="mt-4 rounded-md border p-3 text-sm leading-6"
-          style={{
-            backgroundColor: accent.note,
-            borderColor: accent.border,
-          }}
-        >
+        <div className={cn("mt-4 rounded-md border p-3 text-sm leading-6", accent.note)}>
           {finding.recommendation}
         </div>
 
@@ -1319,20 +1293,13 @@ function TimelineItem({
             return (
               <div
                 key={step}
-                className="rounded-md border p-3 text-sm shadow-sm transition-transform duration-200 hover:-translate-y-0.5"
-                style={{
-                  backgroundColor: stepAccent.background,
-                  borderColor: stepAccent.border,
-                }}
+                className={cn(
+                  "rounded-md border p-3 text-sm shadow-sm transition-transform duration-200 hover:-translate-y-0.5",
+                  stepAccent,
+                )}
               >
-                <div className="mb-2 flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: stepAccent.dot }}
-                  />
-                  <span className="text-xs font-semibold uppercase text-muted-foreground">
-                    Step {stepIndex + 1}
-                  </span>
+                <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                  Step {stepIndex + 1}
                 </div>
                 {step}
               </div>
@@ -1340,22 +1307,10 @@ function TimelineItem({
           })}
         </div>
 
-        <details
-          className="mt-4 rounded-md border p-3 text-sm"
-          style={{
-            backgroundColor: accent.details,
-            borderColor: accent.border,
-          }}
-        >
+        <details className={cn("mt-4 rounded-md border p-3 text-sm", accent.details)}>
           <summary className="cursor-pointer font-medium">Recipe and evidence</summary>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            <div
-              className="rounded-md border p-3"
-              style={{
-                backgroundColor: "#ffffff",
-                borderColor: accent.border,
-              }}
-            >
+            <div className="rounded-md border bg-card/80 p-3">
               <p className="font-semibold">Automation recipe</p>
               <p className="mt-2 text-muted-foreground">
                 {finding.automationRecipe.trigger}
@@ -1394,19 +1349,10 @@ function TimelineItem({
 
 function BeforeAfterMini({ finding }: { finding: LeakFinding }) {
   return (
-    <div className="mt-4 grid gap-3 rounded-md border bg-white/78 p-3 sm:grid-cols-3">
-      <MiniStat
-        label={finding.simulation.currentLabel}
-        value={finding.simulation.currentValue}
-      />
-      <MiniStat
-        label={finding.simulation.afterLabel}
-        value={finding.simulation.afterValue}
-      />
-      <MiniStat
-        label="Monthly savings"
-        value={formatCurrency(finding.simulation.savings)}
-      />
+    <div className="mt-4 grid gap-3 rounded-md border bg-card/65 p-3 sm:grid-cols-3">
+      <MiniStat label={finding.simulation.currentLabel} value={finding.simulation.currentValue} />
+      <MiniStat label={finding.simulation.afterLabel} value={finding.simulation.afterValue} />
+      <MiniStat label="Savings" value={formatCurrency(finding.simulation.savings)} />
     </div>
   );
 }
@@ -1437,11 +1383,11 @@ function ImportView({
   return (
     <div className="space-y-5">
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card>
+        <Card className="bg-card/90">
           <CardHeader className="pb-3">
             <CardTitle>Bring Your Workflow Data</CardTitle>
             <CardDescription>
-              CSV keeps the demo reliable and maps cleanly to future integrations.
+              CSV now, integrations later.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1460,12 +1406,10 @@ function ImportView({
         </Card>
 
         <div className="space-y-5">
-          <Card>
+          <Card className="bg-card/90">
             <CardHeader className="pb-3">
               <CardTitle>Demo Data</CardTitle>
-              <CardDescription>
-                Healthy rows, mild friction, and serious leaks.
-              </CardDescription>
+              <CardDescription>60 balanced workflow rows.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button
@@ -1483,7 +1427,7 @@ function ImportView({
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-card/90">
             <CardHeader className="pb-3">
               <CardTitle>Report Details</CardTitle>
             </CardHeader>
@@ -1526,7 +1470,7 @@ function ImportView({
         </Card>
       )}
 
-      <Card>
+      <Card className="bg-card/90">
         <CardHeader className="pb-3">
           <CardTitle>CSV Shape</CardTitle>
           <CardDescription>Required columns for each upload type.</CardDescription>
@@ -1595,7 +1539,7 @@ function UploadCard({
   const Icon = meta.icon;
 
   return (
-    <div className="rounded-lg border bg-white p-4 shadow-sm">
+    <div className="rounded-lg border bg-muted/25 p-4 shadow-sm">
       <div className="mb-4 flex items-center gap-3">
         <div
           className={cn(
@@ -1632,7 +1576,7 @@ function UploadCard({
 
 function FieldList({ title, fields }: { title: string; fields: string[] }) {
   return (
-    <div className="rounded-lg border bg-white p-4">
+    <div className="rounded-lg border bg-muted/25 p-4">
       <h3 className="font-semibold">{title}</h3>
       <div className="mt-3 flex flex-wrap gap-2">
         {fields.map((field) => (
@@ -1657,13 +1601,13 @@ function RawDataView({
   const rows = data[activeDataType];
 
   return (
-    <Card>
+    <Card className="bg-card/90">
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <CardTitle>Raw Imported Data</CardTitle>
             <CardDescription>
-              A transparent look at the rows behind the recommendations.
+              The rows behind the recommendations.
             </CardDescription>
           </div>
           <div className="flex gap-2 overflow-x-auto">
@@ -1673,10 +1617,10 @@ function RawDataView({
                 type="button"
                 onClick={() => onActiveDataTypeChange(type)}
                 className={cn(
-                  "inline-flex h-9 shrink-0 items-center rounded-md border px-3 text-sm font-medium transition-colors",
+                  "inline-flex h-9 shrink-0 items-center rounded-md px-3 text-sm font-medium transition-colors",
                   activeDataType === type
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "bg-white text-foreground hover:bg-muted",
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
                 )}
               >
                 {dataTypeMeta[type].label}
@@ -1744,7 +1688,7 @@ function EvidenceList({
       {details.map((item) => (
         <div
           key={`${finding.id}-${item.label}`}
-          className="rounded-md border bg-white p-3"
+          className="rounded-md border bg-card/80 p-3"
         >
           <p className="text-xs font-medium uppercase text-muted-foreground">
             {item.label}
@@ -1790,7 +1734,7 @@ function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="grid min-h-[340px] place-items-center rounded-lg border border-dashed bg-white/70 p-8 text-center">
+    <div className="grid min-h-[340px] place-items-center rounded-lg border border-dashed bg-card/70 p-8 text-center">
       <div className="max-w-md">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-muted">
           {icon ?? <Database className="h-6 w-6 text-primary" aria-hidden="true" />}
@@ -1818,7 +1762,7 @@ function GuidedDemoOverlay({
   const isLast = step === demoSteps.length - 1;
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-lg border bg-white p-4 shadow-soft page-transition">
+    <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-lg border bg-card p-4 shadow-soft page-transition">
       <div className="flex items-start justify-between gap-3">
         <div>
           <Badge variant="secondary">90-second demo</Badge>
@@ -1870,10 +1814,6 @@ interface DataQuality {
 }
 
 function getTotals(data: WorkflowData, findings: LeakFinding[]) {
-  const grossHoursLost = findings.reduce(
-    (total, finding) => total + finding.hoursLostPerMonth,
-    0,
-  );
   const adjustedHoursLost = findings.reduce(
     (total, finding) => total + finding.adjustedHoursLostPerMonth,
     0,
@@ -1916,7 +1856,6 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
   );
 
   return {
-    grossHoursLost,
     adjustedHoursLost,
     grossMonthlyCost,
     adjustedMonthlyCost,
@@ -1973,7 +1912,9 @@ function getDataQuality(data: WorkflowData): DataQuality {
     ...data.meetings.flatMap((row) => meetingFields.map((field) => row[field])),
     ...data.pullRequests.flatMap((row) => prFields.map((field) => row[field])),
   ];
-  const present = required.filter((value) => value !== undefined && value !== null && value !== "").length;
+  const present = required.filter(
+    (value) => value !== undefined && value !== null && value !== "",
+  ).length;
   const requiredFieldRate =
     required.length === 0 ? 0 : Math.round((present / required.length) * 100);
   const meetingOutcomeGaps = data.meetings.filter(
@@ -2064,7 +2005,7 @@ function formatBoardroomSummary(findings: LeakFinding[], dataQuality: DataQualit
     adjustedWaste,
   )}, with ${formatCurrency(
     savings,
-  )} recoverable in the first improvement cycle. The highest-ROI fix is ${topFinding.fingerprint.toLowerCase()} in ${
+  )} recoverable. The highest-ROI fix is ${topFinding.fingerprint.toLowerCase()} in ${
     topFinding.team
   }.`;
 }
@@ -2088,49 +2029,28 @@ function getSuggestedOwner(finding: LeakFinding) {
 function getActionAccent(index: number, fingerprint: LeakFingerprint) {
   const presets = [
     {
-      marker: "#22577a",
-      markerText: "#ffffff",
-      border: "#9dc8d8",
-      card: "linear-gradient(135deg, #f4fbff 0%, #ffffff 56%, #eef8f8 100%)",
-      note: "#eef8f8",
-      details: "#f4fbff",
-      shadow: "rgba(34, 87, 122, 0.16)",
+      marker: "action-marker-sky",
+      card: "action-card-sky",
+      note: "action-note-sky",
+      details: "action-details-sky",
     },
     {
-      marker: "#38a3a5",
-      markerText: "#ffffff",
-      border: "#a7dedd",
-      card: "linear-gradient(135deg, #effafa 0%, #ffffff 58%, #f4fff9 100%)",
-      note: "#effafa",
-      details: "#f4fff9",
-      shadow: "rgba(56, 163, 165, 0.17)",
+      marker: "action-marker-teal",
+      card: "action-card-teal",
+      note: "action-note-teal",
+      details: "action-details-teal",
     },
     {
-      marker: "#f2c14e",
-      markerText: "#17202a",
-      border: "#f6d98b",
-      card: "linear-gradient(135deg, #fff9ec 0%, #ffffff 58%, #f7fbf0 100%)",
-      note: "#fff5dc",
-      details: "#fffaf0",
-      shadow: "rgba(242, 193, 78, 0.2)",
+      marker: "action-marker-amber",
+      card: "action-card-amber",
+      note: "action-note-amber",
+      details: "action-details-amber",
     },
     {
-      marker: "#f07167",
-      markerText: "#ffffff",
-      border: "#f5b0aa",
-      card: "linear-gradient(135deg, #fff3f1 0%, #ffffff 58%, #fff8ec 100%)",
-      note: "#fff0ee",
-      details: "#fff7f5",
-      shadow: "rgba(240, 113, 103, 0.17)",
-    },
-    {
-      marker: "#57cc99",
-      markerText: "#10251b",
-      border: "#afe7cd",
-      card: "linear-gradient(135deg, #effcf5 0%, #ffffff 58%, #f8fbef 100%)",
-      note: "#effcf5",
-      details: "#f7fff9",
-      shadow: "rgba(87, 204, 153, 0.18)",
+      marker: "action-marker-rose",
+      card: "action-card-rose",
+      note: "action-note-rose",
+      details: "action-details-rose",
     },
   ];
 
@@ -2145,9 +2065,9 @@ function getActionAccent(index: number, fingerprint: LeakFingerprint) {
 
 function getStepAccent(index: number) {
   const accents = [
-    { background: "#eef8f8", border: "#b7dddc", dot: "#38a3a5" },
-    { background: "#fff7e7", border: "#f5d58a", dot: "#f2c14e" },
-    { background: "#effcf5", border: "#b9e9d1", dot: "#57cc99" },
+    "step-accent-teal",
+    "step-accent-amber",
+    "step-accent-emerald",
   ];
 
   return accents[index % accents.length];

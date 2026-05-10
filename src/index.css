@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -24,6 +26,27 @@
     --radius: 0.5rem;
   }
 
+  .dark {
+    --background: 205 30% 8%;
+    --foreground: 180 22% 93%;
+    --card: 205 26% 12%;
+    --card-foreground: 180 22% 93%;
+    --primary: 175 46% 48%;
+    --primary-foreground: 205 32% 8%;
+    --secondary: 181 30% 18%;
+    --secondary-foreground: 175 52% 86%;
+    --muted: 205 22% 17%;
+    --muted-foreground: 190 13% 68%;
+    --accent: 43 78% 58%;
+    --accent-foreground: 205 32% 8%;
+    --destructive: 5 76% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 200 18% 24%;
+    --input: 200 18% 24%;
+    --ring: 175 46% 48%;
+    color-scheme: dark;
+  }
+
   * {
     @apply border-border;
   }
@@ -31,8 +54,15 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      Poppins, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
       "Segoe UI", sans-serif;
+  }
+
+  html,
+  body {
+    transition:
+      background-color 180ms ease,
+      color 180ms ease;
   }
 
   button,
@@ -54,6 +84,191 @@
 
   .gentle-float {
     animation: gentle-float 5s ease-in-out infinite;
+  }
+
+  .action-marker-sky {
+    border-color: #7dd3fc;
+    background: #0284c7;
+    color: #ffffff;
+  }
+
+  .action-card-sky {
+    border-color: #bae6fd;
+    background:
+      linear-gradient(135deg, rgba(240, 249, 255, 0.98), rgba(248, 250, 252, 0.94));
+    color: hsl(var(--foreground));
+  }
+
+  .action-note-sky,
+  .action-details-sky {
+    border-color: #7dd3fc;
+    background: rgba(224, 242, 254, 0.9);
+    color: hsl(var(--foreground));
+  }
+
+  .action-marker-teal {
+    border-color: #5eead4;
+    background: #0f766e;
+    color: #ffffff;
+  }
+
+  .action-card-teal {
+    border-color: #99f6e4;
+    background:
+      linear-gradient(135deg, rgba(240, 253, 250, 0.98), rgba(247, 254, 231, 0.86));
+    color: hsl(var(--foreground));
+  }
+
+  .action-note-teal,
+  .action-details-teal {
+    border-color: #5eead4;
+    background: rgba(204, 251, 241, 0.82);
+    color: hsl(var(--foreground));
+  }
+
+  .action-marker-amber {
+    border-color: #fcd34d;
+    background: #f59e0b;
+    color: #1f2937;
+  }
+
+  .action-card-amber {
+    border-color: #fde68a;
+    background:
+      linear-gradient(135deg, rgba(255, 251, 235, 0.98), rgba(255, 247, 237, 0.9));
+    color: hsl(var(--foreground));
+  }
+
+  .action-note-amber,
+  .action-details-amber {
+    border-color: #fbbf24;
+    background: rgba(254, 243, 199, 0.86);
+    color: hsl(var(--foreground));
+  }
+
+  .action-marker-rose {
+    border-color: #fda4af;
+    background: #e11d48;
+    color: #ffffff;
+  }
+
+  .action-card-rose {
+    border-color: #fecdd3;
+    background:
+      linear-gradient(135deg, rgba(255, 241, 242, 0.98), rgba(253, 242, 248, 0.92));
+    color: hsl(var(--foreground));
+  }
+
+  .action-note-rose,
+  .action-details-rose {
+    border-color: #fda4af;
+    background: rgba(255, 228, 230, 0.88);
+    color: hsl(var(--foreground));
+  }
+
+  .step-accent-teal {
+    border-color: #99f6e4;
+    background: rgba(240, 253, 250, 0.92);
+    color: hsl(var(--foreground));
+  }
+
+  .step-accent-amber {
+    border-color: #fcd34d;
+    background: rgba(255, 251, 235, 0.92);
+    color: hsl(var(--foreground));
+  }
+
+  .step-accent-emerald {
+    border-color: #86efac;
+    background: rgba(240, 253, 244, 0.92);
+    color: hsl(var(--foreground));
+  }
+
+  .dark .action-marker-sky {
+    border-color: rgba(125, 211, 252, 0.55);
+    background: #38bdf8;
+    color: #052331;
+  }
+
+  .dark .action-card-sky {
+    border-color: rgba(56, 189, 248, 0.45);
+    background:
+      linear-gradient(135deg, rgba(8, 47, 73, 0.9), rgba(12, 74, 110, 0.58));
+  }
+
+  .dark .action-note-sky,
+  .dark .action-details-sky {
+    border-color: rgba(56, 189, 248, 0.48);
+    background: rgba(12, 74, 110, 0.52);
+  }
+
+  .dark .action-marker-teal {
+    border-color: rgba(94, 234, 212, 0.55);
+    background: #2dd4bf;
+    color: #052e2b;
+  }
+
+  .dark .action-card-teal {
+    border-color: rgba(45, 212, 191, 0.43);
+    background:
+      linear-gradient(135deg, rgba(19, 78, 74, 0.88), rgba(20, 83, 45, 0.48));
+  }
+
+  .dark .action-note-teal,
+  .dark .action-details-teal {
+    border-color: rgba(45, 212, 191, 0.46);
+    background: rgba(19, 78, 74, 0.52);
+  }
+
+  .dark .action-marker-amber {
+    border-color: rgba(252, 211, 77, 0.56);
+    background: #fbbf24;
+    color: #231600;
+  }
+
+  .dark .action-card-amber {
+    border-color: rgba(251, 191, 36, 0.43);
+    background:
+      linear-gradient(135deg, rgba(113, 63, 18, 0.84), rgba(120, 53, 15, 0.48));
+  }
+
+  .dark .action-note-amber,
+  .dark .action-details-amber {
+    border-color: rgba(251, 191, 36, 0.46);
+    background: rgba(120, 53, 15, 0.5);
+  }
+
+  .dark .action-marker-rose {
+    border-color: rgba(251, 113, 133, 0.55);
+    background: #fb7185;
+    color: #3b0712;
+  }
+
+  .dark .action-card-rose {
+    border-color: rgba(251, 113, 133, 0.43);
+    background:
+      linear-gradient(135deg, rgba(136, 19, 55, 0.82), rgba(76, 29, 149, 0.38));
+  }
+
+  .dark .action-note-rose,
+  .dark .action-details-rose {
+    border-color: rgba(251, 113, 133, 0.46);
+    background: rgba(136, 19, 55, 0.48);
+  }
+
+  .dark .step-accent-teal {
+    border-color: rgba(45, 212, 191, 0.44);
+    background: rgba(19, 78, 74, 0.55);
+  }
+
+  .dark .step-accent-amber {
+    border-color: rgba(251, 191, 36, 0.44);
+    background: rgba(120, 53, 15, 0.52);
+  }
+
+  .dark .step-accent-emerald {
+    border-color: rgba(74, 222, 128, 0.42);
+    background: rgba(20, 83, 45, 0.52);
   }
 }
 
