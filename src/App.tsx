@@ -74,6 +74,34 @@ type View = "dashboard" | "import" | "data" | "actions";
 
 const storageKey = "workleak-demo-state-v3";
 
+const demoSteps: { view: View; title: string; text: string }[] = [
+  {
+    view: "dashboard",
+    title: "1. Executive snapshot",
+    text: "Start with scanned records, healthy work ignored, adjusted waste, and the best first fix.",
+  },
+  {
+    view: "dashboard",
+    title: "2. Fix This First",
+    text: "Show that WorkLeak ranks by savings, confidence, effort, and payback, not just cost.",
+  },
+  {
+    view: "dashboard",
+    title: "3. Leak Fingerprints",
+    text: "Point out memorable patterns like Approval Black Hole and PR Waiting Room.",
+  },
+  {
+    view: "actions",
+    title: "4. Monday Morning Plan",
+    text: "Move from insight to execution with owners, savings, effort, and recipes.",
+  },
+  {
+    view: "actions",
+    title: "5. Copy and export",
+    text: "Copy Jira text or export Markdown, JSON, and CSV for the team.",
+  },
+];
+
 const emptyData: WorkflowData = {
   tickets: [],
   meetings: [],
@@ -159,6 +187,7 @@ function App() {
   const [activeDataType, setActiveDataType] = useState<DataType>("tickets");
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
+  const [demoStep, setDemoStep] = useState<number | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
@@ -245,6 +274,7 @@ function App() {
     () => buildFingerprintSummaries(findings),
     [findings],
   );
+  const dataQuality = useMemo(() => getDataQuality(data), [data]);
 
   async function loadSampleData() {
     setIsLoadingSamples(true);
@@ -330,6 +360,27 @@ function App() {
     );
   }
 
+  async function startGuidedDemo() {
+    if (!hasData) {
+      await loadSampleData();
+    }
+    setView("dashboard");
+    setDemoStep(0);
+  }
+
+  function handleDemoNext() {
+    if (demoStep === null) return;
+    const nextStep = demoStep + 1;
+
+    if (nextStep >= demoSteps.length) {
+      setDemoStep(null);
+      return;
+    }
+
+    setDemoStep(nextStep);
+    setView(demoSteps[nextStep].view);
+  }
+
   const hasData = totals.importedRows > 0;
 
   return (
@@ -354,23 +405,15 @@ function App() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[180px_170px_160px_auto] xl:items-end">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[180px_170px_145px_150px_auto] xl:items-end">
             <MoneyInput
               value={averageHourlyCost}
               onChange={setAverageHourlyCost}
             />
             <PercentInput value={recoveryRate} onChange={setRecoveryRate} />
-            <Button
-              variant="secondary"
-              onClick={loadSampleData}
-              disabled={isLoadingSamples}
-            >
-              {isLoadingSamples ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
-              )}
-              Sample Data
+            <Button variant="outline" onClick={startGuidedDemo}>
+              <Target className="h-4 w-4" aria-hidden="true" />
+              Demo
             </Button>
             <Button onClick={handleExportMarkdown} disabled={!findings.length}>
               <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
@@ -412,6 +455,7 @@ function App() {
               categoryChart={categoryChart}
               sourceBreakdown={sourceBreakdown}
               fingerprintSummaries={fingerprintSummaries}
+              dataQuality={dataQuality}
               recoveryRate={recoveryRate}
               isLoadingSamples={isLoadingSamples}
               onLoadSamples={loadSampleData}
@@ -429,6 +473,7 @@ function App() {
               onExportMarkdown={handleExportMarkdown}
               onExportJson={handleExportJson}
               onExportCsv={handleExportCsv}
+              dataQuality={dataQuality}
             />
           )}
 
@@ -455,6 +500,13 @@ function App() {
             />
           )}
         </div>
+        {demoStep !== null && (
+          <GuidedDemoOverlay
+            step={demoStep}
+            onNext={handleDemoNext}
+            onClose={() => setDemoStep(null)}
+          />
+        )}
       </div>
     </main>
   );
@@ -520,6 +572,7 @@ function DashboardView({
   categoryChart,
   sourceBreakdown,
   fingerprintSummaries,
+  dataQuality,
   recoveryRate,
   isLoadingSamples,
   onLoadSamples,
@@ -538,6 +591,7 @@ function DashboardView({
     percent: number;
   }[];
   fingerprintSummaries: FingerprintSummary[];
+  dataQuality: DataQuality;
   recoveryRate: number;
   isLoadingSamples: boolean;
   onLoadSamples: () => void;
@@ -664,6 +718,12 @@ function DashboardView({
         </Card>
       </section>
 
+      <BoardroomSummaryCard
+        totals={totals}
+        findings={findings}
+        dataQuality={dataQuality}
+      />
+
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
         <Card>
           <CardHeader className="pb-3">
@@ -699,6 +759,7 @@ function DashboardView({
                 <SourceRow key={source.type} source={source} />
               ))}
             </div>
+            <DataQualityPanel dataQuality={dataQuality} />
           </CardContent>
         </Card>
       </section>
@@ -768,20 +829,28 @@ function DashboardView({
       </section>
 
       <Card>
-        <CardContent className="grid gap-4 p-5 lg:grid-cols-3">
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-3 xl:grid-cols-5">
           <MethodNote
             title="Adjusted waste"
             text="Deduplicates overlapping signals from the same workflow item."
+          />
+          <MethodNote
+            title="WorkLeak score"
+            text="Combines adjusted lost hours, flagged leak density, and severe fingerprints."
           />
           <MethodNote
             title="Fix-first score"
             text="Projected savings and confidence, normalized by effort."
           />
           <MethodNote
-            title="Recovery assumption"
-            text={`Current model assumes ${Math.round(
+            title="Confidence"
+            text="Based on signal strength, source completeness, and how far work exceeded thresholds."
+          />
+          <MethodNote
+            title="Recovery"
+            text={`${Math.round(
               recoveryRate * 100,
-            )}% recovery from the first improvement cycle.`}
+            )}% assumed recoverable in the first improvement cycle.`}
           />
         </CardContent>
       </Card>
@@ -807,6 +876,76 @@ function DarkStat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-white/15 bg-white/8 p-3">
       <p className="text-xs text-white/60">{label}</p>
       <p className="mt-1 font-semibold tabular">{value}</p>
+    </div>
+  );
+}
+
+function BoardroomSummaryCard({
+  totals,
+  findings,
+  dataQuality,
+}: {
+  totals: ReturnType<typeof getTotals>;
+  findings: LeakFinding[];
+  dataQuality: DataQuality;
+}) {
+  const topFinding = findings[0];
+
+  return (
+    <Card className="border-[#d7e7df] bg-[linear-gradient(135deg,#ffffff_0%,#f4fbf8_100%)]">
+      <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+        <div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <Badge variant="secondary">Boardroom Summary</Badge>
+            <Badge variant="outline">Data quality: {dataQuality.status}</Badge>
+          </div>
+          <p className="text-lg leading-8">
+            WorkLeak scanned {totals.importedRows} records and identified{" "}
+            {totals.findingsCount} high-value leaks. Adjusted monthly waste is{" "}
+            {formatCurrency(totals.adjustedMonthlyCost)}, with{" "}
+            {formatCurrency(totals.projectedSavings)} recoverable in the first
+            improvement cycle.
+          </p>
+          {topFinding && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Highest-ROI fix: {topFinding.fingerprint} in {topFinding.team}.
+            </p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <MiniStat label="Score means" value="drag level" />
+          <MiniStat label="Fields present" value={`${dataQuality.requiredFieldRate}%`} />
+          <MiniStat label="Outcome gaps" value={`${dataQuality.meetingOutcomeGaps}`} />
+          <MiniStat label="Healthy ignored" value={`${totals.healthyWorkflowCount}`} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataQualityPanel({ dataQuality }: { dataQuality: DataQuality }) {
+  return (
+    <div className="rounded-lg border bg-[#fff9ec] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-semibold">Data Quality</p>
+        <Badge variant={dataQuality.status === "Good" ? "teal" : "amber"}>
+          {dataQuality.status}
+        </Badge>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <MiniStat
+          label="Required fields"
+          value={`${dataQuality.requiredFieldRate}%`}
+        />
+        <MiniStat
+          label="Meeting gaps"
+          value={`${dataQuality.meetingOutcomeGaps}`}
+        />
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        Confidence is adjusted by signal strength, source completeness, and how
+        far each workflow exceeded its threshold.
+      </p>
     </div>
   );
 }
@@ -939,6 +1078,7 @@ function ActionPlanView({
   onExportMarkdown,
   onExportJson,
   onExportCsv,
+  dataQuality,
 }: {
   findings: LeakFinding[];
   hasData: boolean;
@@ -947,6 +1087,7 @@ function ActionPlanView({
   onExportMarkdown: () => void;
   onExportJson: () => void;
   onExportCsv: () => void;
+  dataQuality: DataQuality;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -1057,6 +1198,18 @@ function ActionPlanView({
             </CardContent>
           </Card>
 
+          <Card className="border-[#d7e7df] bg-[#f4fbf8]">
+            <CardHeader className="pb-3">
+              <CardTitle>Boardroom Summary</CardTitle>
+              <CardDescription>One paragraph for leadership.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {formatBoardroomSummary(findings, dataQuality)}
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="border-[#d7e7df] bg-white">
             <CardHeader className="pb-3">
               <CardTitle>Plan Shape</CardTitle>
@@ -1131,6 +1284,23 @@ function TimelineItem({
           </div>
         </div>
 
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Affected records:</span>
+          {finding.affectedRecords.slice(0, 6).map((recordId) => (
+            <span
+              key={recordId}
+              className="rounded-md border bg-white/70 px-2 py-1 font-medium text-foreground"
+            >
+              {recordId}
+            </span>
+          ))}
+          {finding.affectedRecords.length > 6 && (
+            <span className="rounded-md border bg-white/70 px-2 py-1 font-medium text-foreground">
+              +{finding.affectedRecords.length - 6}
+            </span>
+          )}
+        </div>
+
         <div
           className="mt-4 rounded-md border p-3 text-sm leading-6"
           style={{
@@ -1140,6 +1310,8 @@ function TimelineItem({
         >
           {finding.recommendation}
         </div>
+
+        <BeforeAfterMini finding={finding} />
 
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
           {finding.implementationSteps.slice(0, 3).map((step, stepIndex) => {
@@ -1217,6 +1389,25 @@ function TimelineItem({
         </div>
       </div>
     </article>
+  );
+}
+
+function BeforeAfterMini({ finding }: { finding: LeakFinding }) {
+  return (
+    <div className="mt-4 grid gap-3 rounded-md border bg-white/78 p-3 sm:grid-cols-3">
+      <MiniStat
+        label={finding.simulation.currentLabel}
+        value={finding.simulation.currentValue}
+      />
+      <MiniStat
+        label={finding.simulation.afterLabel}
+        value={finding.simulation.afterValue}
+      />
+      <MiniStat
+        label="Monthly savings"
+        value={formatCurrency(finding.simulation.savings)}
+      />
+    </div>
   );
 }
 
@@ -1614,11 +1805,68 @@ function EmptyState({
   );
 }
 
+function GuidedDemoOverlay({
+  step,
+  onNext,
+  onClose,
+}: {
+  step: number;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  const current = demoSteps[step];
+  const isLast = step === demoSteps.length - 1;
+
+  return (
+    <div className="fixed bottom-5 right-5 z-50 w-[min(360px,calc(100vw-2.5rem))] rounded-lg border bg-white p-4 shadow-soft page-transition">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Badge variant="secondary">90-second demo</Badge>
+          <h3 className="mt-2 font-semibold">{current.title}</h3>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Close guided demo"
+        >
+          Close
+        </button>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        {current.text}
+      </p>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="flex gap-1">
+          {demoSteps.map((item, index) => (
+            <span
+              key={item.title}
+              className={cn(
+                "h-2 w-7 rounded-full transition-colors",
+                index <= step ? "bg-primary" : "bg-muted",
+              )}
+            />
+          ))}
+        </div>
+        <Button size="sm" onClick={onNext}>
+          {isLast ? "Finish" : "Next"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface FingerprintSummary {
   fingerprint: LeakFingerprint;
   count: number;
   adjustedCost: number;
   color: string;
+}
+
+interface DataQuality {
+  status: "Good" | "Fair";
+  requiredFieldRate: number;
+  meetingOutcomeGaps: number;
 }
 
 function getTotals(data: WorkflowData, findings: LeakFinding[]) {
@@ -1681,6 +1929,64 @@ function getTotals(data: WorkflowData, findings: LeakFinding[]) {
   };
 }
 
+function getDataQuality(data: WorkflowData): DataQuality {
+  const ticketFields: (keyof TicketRecord)[] = [
+    "id",
+    "title",
+    "team",
+    "owner",
+    "status",
+    "waitHours",
+    "cycleHours",
+    "ownerChanges",
+    "blockerHours",
+    "repeatsPerMonth",
+  ];
+  const meetingFields: (keyof MeetingRecord)[] = [
+    "id",
+    "title",
+    "team",
+    "organizer",
+    "cadence",
+    "attendees",
+    "durationMinutes",
+    "meetingsPerMonth",
+    "outcomeCaptured",
+    "actionItems",
+  ];
+  const prFields: (keyof PullRequestRecord)[] = [
+    "id",
+    "title",
+    "repository",
+    "author",
+    "reviewer",
+    "status",
+    "reviewWaitHours",
+    "comments",
+    "reworkHours",
+    "blockerHours",
+    "repeatsPerMonth",
+  ];
+
+  const required = [
+    ...data.tickets.flatMap((row) => ticketFields.map((field) => row[field])),
+    ...data.meetings.flatMap((row) => meetingFields.map((field) => row[field])),
+    ...data.pullRequests.flatMap((row) => prFields.map((field) => row[field])),
+  ];
+  const present = required.filter((value) => value !== undefined && value !== null && value !== "").length;
+  const requiredFieldRate =
+    required.length === 0 ? 0 : Math.round((present / required.length) * 100);
+  const meetingOutcomeGaps = data.meetings.filter(
+    (meeting) => !meeting.outcomeCaptured || meeting.actionItems === 0,
+  ).length;
+
+  return {
+    status: requiredFieldRate >= 90 ? "Good" : "Fair",
+    requiredFieldRate,
+    meetingOutcomeGaps,
+  };
+}
+
 function buildFingerprintSummaries(findings: LeakFinding[]): FingerprintSummary[] {
   const grouped = findings.reduce<Record<string, LeakFinding[]>>(
     (groups, finding) => {
@@ -1735,6 +2041,32 @@ function formatMondayMorningPlan(findings: LeakFinding[]) {
       ].join("\n"),
     )
     .join("\n\n");
+}
+
+function formatBoardroomSummary(findings: LeakFinding[], dataQuality: DataQuality) {
+  const topFinding = findings[0];
+  const adjustedWaste = findings.reduce(
+    (total, finding) => total + finding.adjustedMonthlyCost,
+    0,
+  );
+  const savings = findings.reduce(
+    (total, finding) => total + finding.projectedSavings,
+    0,
+  );
+
+  if (!topFinding) {
+    return "WorkLeak has not detected high-value workflow leaks yet.";
+  }
+
+  return `WorkLeak identified ${
+    findings.length
+  } high-value workflow leaks with ${dataQuality.status.toLowerCase()} data quality. Adjusted monthly waste is ${formatCurrency(
+    adjustedWaste,
+  )}, with ${formatCurrency(
+    savings,
+  )} recoverable in the first improvement cycle. The highest-ROI fix is ${topFinding.fingerprint.toLowerCase()} in ${
+    topFinding.team
+  }.`;
 }
 
 function getSuggestedOwner(finding: LeakFinding) {
