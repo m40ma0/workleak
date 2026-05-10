@@ -1,0 +1,84 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function defaultWorkspaceId() {
+      return request.auth.uid + "_default";
+    }
+
+    function ownsIncomingWorkspaceDoc() {
+      return signedIn()
+        && request.resource.data.workspaceId == defaultWorkspaceId();
+    }
+
+    function ownsExistingWorkspaceDoc() {
+      return signedIn()
+        && resource.data.workspaceId == defaultWorkspaceId();
+    }
+
+    match /users/{uid} {
+      allow read, update: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid;
+      allow delete: if false;
+    }
+
+    match /workspaces/{workspaceId} {
+      allow read, create, update: if signedIn()
+        && workspaceId == defaultWorkspaceId();
+      allow delete: if false;
+    }
+
+    match /memberships/{membershipId} {
+      allow read, update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && resource.data.workspaceId == defaultWorkspaceId();
+      allow create: if signedIn()
+        && membershipId == defaultWorkspaceId() + "_" + request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.workspaceId == defaultWorkspaceId();
+      allow delete: if false;
+    }
+
+    match /uploads/{docId} {
+      allow read: if ownsExistingWorkspaceDoc();
+      allow create: if ownsIncomingWorkspaceDoc();
+      allow update, delete: if false;
+    }
+
+    match /analysisRuns/{docId} {
+      allow read: if ownsExistingWorkspaceDoc();
+      allow create: if ownsIncomingWorkspaceDoc();
+      allow update, delete: if false;
+    }
+
+    match /findings/{docId} {
+      allow read: if ownsExistingWorkspaceDoc();
+      allow create: if ownsIncomingWorkspaceDoc();
+      allow update, delete: if false;
+    }
+
+    match /actionPlans/{docId} {
+      allow read: if ownsExistingWorkspaceDoc();
+      allow create: if ownsIncomingWorkspaceDoc();
+      allow update, delete: if false;
+    }
+
+    match /reports/{docId} {
+      allow read: if ownsExistingWorkspaceDoc();
+      allow create: if ownsIncomingWorkspaceDoc();
+      allow update, delete: if false;
+    }
+
+    match /auditLogs/{docId} {
+      allow read: if ownsExistingWorkspaceDoc();
+      allow create: if ownsIncomingWorkspaceDoc();
+      allow update, delete: if false;
+    }
+  }
+}

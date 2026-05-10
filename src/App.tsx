@@ -492,7 +492,7 @@ function App() {
   }
 
   async function handleSaveToCloud() {
-    if (!firebaseUser || !workspaceId) {
+    if (!firebaseUser) {
       setCloudStatus("error");
       setCloudMessage("Sign in before saving a WorkLeak report.");
       return;
@@ -508,9 +508,16 @@ function App() {
     setCloudMessage("");
 
     try {
+      const ensuredWorkspaceId =
+        workspaceId ?? (await ensureUserWorkspace(firebaseUser, companyName));
+
+      if (!workspaceId) {
+        setWorkspaceId(ensuredWorkspaceId);
+      }
+
       const saved = await saveAnalysisSnapshot({
         user: firebaseUser,
-        workspaceId,
+        workspaceId: ensuredWorkspaceId,
         reportTitle,
         companyName,
         dataOrigin,
@@ -521,7 +528,18 @@ function App() {
         averageHourlyCost,
         recoveryRate,
       });
-      await refreshSavedReports(workspaceId);
+
+      try {
+        await refreshSavedReports(ensuredWorkspaceId);
+      } catch {
+        setSavedReports([]);
+        setCloudStatus("saved");
+        setCloudMessage(
+          `Saved report ${saved.reportId.slice(0, 6)} to Firestore. Report list could not refresh; check Firestore read rules.`,
+        );
+        return;
+      }
+
       setCloudStatus("saved");
       setCloudMessage(`Saved report ${saved.reportId.slice(0, 6)} to Firestore.`);
     } catch (error) {
@@ -1911,6 +1929,17 @@ function SettingsView({
   onExportJson: () => void;
   onExportCsv: () => void;
 }) {
+  const cloudBadgeLabel = !user
+    ? "Sign in"
+    : cloudStatus === "error"
+      ? "Needs rules"
+      : "Ready";
+  const cloudBadgeVariant = !user
+    ? "outline"
+    : cloudStatus === "error"
+      ? "amber"
+      : "teal";
+
   return (
     <div className="space-y-5">
       <Card className="overflow-hidden border-primary/20 bg-card/90 shadow-soft">
@@ -1974,9 +2003,7 @@ function SettingsView({
                 <CardTitle>Cloud Reports</CardTitle>
                 <CardDescription>Authenticated Firestore snapshots.</CardDescription>
               </div>
-              <Badge variant={user ? "teal" : "outline"}>
-                {user ? "Ready" : "Sign in"}
-              </Badge>
+              <Badge variant={cloudBadgeVariant}>{cloudBadgeLabel}</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -3339,6 +3366,15 @@ function formatShortDate(value?: Date) {
 }
 
 function getErrorMessage(error: unknown) {
+  const maybeFirebaseError = error as { code?: string; message?: string };
+
+  if (
+    maybeFirebaseError.code === "permission-denied" ||
+    maybeFirebaseError.message?.includes("Missing or insufficient permissions")
+  ) {
+    return "Firestore blocked this request. Publish the WorkLeak Firestore rules, then sign out and sign back in.";
+  }
+
   if (error instanceof Error) return error.message;
   return "Something went wrong.";
 }
