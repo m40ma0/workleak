@@ -791,7 +791,7 @@ function ProductHeader({
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white p-1.5 shadow-sm ring-1 ring-black/5 dark:bg-slate-50">
             <img
-              src="/logo.png"
+              src="/logo-mark.png"
               alt="WorkLeak"
               className="h-full w-full object-contain"
             />
